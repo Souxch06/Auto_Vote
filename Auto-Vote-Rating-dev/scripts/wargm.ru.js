@@ -1,0 +1,115 @@
+async function vote(first) {
+    if (first === false) return
+
+    if (first !== 'manual' && document.querySelector('div.MsgBox') != null && document.querySelector('div.MsgBox').innerText.length > 0) return
+
+    if (document.querySelector('div.ui.error.message') != null) {
+        if (document.querySelector('div.ui.error.message').textContent.includes('must wait until tomorrow')) {
+            await wait(Math.floor(Math.random() * 9000 + 1000))
+            chrome.runtime.sendMessage({later: true})
+            return
+        }
+        await wait(Math.floor(Math.random() * 9000 + 1000))
+        chrome.runtime.sendMessage({message: document.querySelector('div.ui.error.message').textContent})
+        return
+    }
+
+    //Если на странице есть кнопка входа через Steam, то жмём её
+    if (document.querySelector('a[href="/steam_login"]') != null) {
+        await wait(Math.floor(Math.random() * 9000 + 1000))
+        document.querySelector('a[href="/steam_login"]').click()
+        return
+    }
+
+    if (document.querySelector('div.general > .card > div.card-body h1')) {
+        const request = {}
+        request.message = document.querySelector('div.general > .card > div.card-body').innerText
+        if (request.message.includes('Страница не найдена')) {
+            request.ignoreReport = true
+            request.retryCoolDown = 21600000
+        }
+        chrome.runtime.sendMessage(request)
+        return
+    }
+
+    let waiting = false
+    const timer2 = setInterval(async () => {
+        try {
+            if (waiting) return
+            let button = document.querySelector('#main .card-footer .btn.btn-blue')
+            if (!button) return
+            const message = button.textContent
+            if (message.includes('ч.') || message.includes('м.')) {
+                const numbers = message.match(/\d+/g).map(Number)
+                const milliseconds = (numbers[0] * 60 * 60 * 1000) + (numbers[1] * 60 * 1000)/* + (sec * 1000)*/
+                waiting = true
+                await wait(Math.floor(Math.random() * 9000 + 1000))
+                chrome.runtime.sendMessage({successfully: Date.now() + milliseconds})
+                return
+            }
+            if ((button.disabled == null || button.disabled === false) && button.getAttribute('disabled') == null) {
+                waiting = true
+                await wait(Math.floor(Math.random() * 9000 + 1000))
+                button = document.querySelector('#main .card-footer .btn.btn-blue[data-send="/server/vote"]')
+                button.click()
+                clearInterval(timer2)
+            }
+        } catch (e) {
+            clearInterval(timer2)
+            throwError(e)
+        }
+    }, 1000)
+}
+
+let voted = false
+const timer = setInterval(async ()=>{
+    try {
+        if (document.querySelector('div.MsgBox .g-recaptcha')) return
+
+        const msg = document.querySelector('div.MsgBox')
+        if (msg != null && msg.innerText.length > 0) {
+            const request = {}
+            request.message = msg.innerText
+            if (request.message.includes('уже проголосовали')) {
+                clearInterval(timer)
+                // await wait(Math.floor(Math.random() * 9000 + 1000))
+                chrome.runtime.sendMessage({later: true})
+            } else if (request.message.includes('Голос принят')) {
+                clearInterval(timer)
+                // TODO кринж кринжа, сайт уведомление об успешном голосовании отображает буквально на секунду, ничего дибильнее придумать автор сайта не может
+                // await wait(Math.floor(Math.random() * 9000 + 1000))
+                chrome.runtime.sendMessage({successfully: true})
+            } else if (request.message.includes('Авторизация')) {
+                clearInterval(timer)
+                chrome.runtime.sendMessage({auth: true})
+            } else if (request.message.includes('In process...')) {
+                // None
+            } else if (request.message === 'Успешно') {
+                if (!voted) {
+                    voted = true
+                    // noinspection ES6MissingAwait
+                    vote('manual')
+                }
+            } else {
+                if (request.message.includes('Сервис временно недоступен') || request.message.includes('Страница устарела') || request.message === 'Ошибка' || (request.message.includes('Запрос отклонен') && request.message.includes('Поступило слишком много запросов')) || request.message.includes('Важные документы')) {
+                    request.ignoreReport = true
+                }
+                if (request.message.includes('Достигнут лимит голосов за день')) {
+                    request.ignoreReport = true
+                    request.retryCoolDown = 3600000 // 24 часа
+                }
+
+                // TODO временный код, пользователи слишком часто вмешиваются в процесс голосования
+                request.message = 'Похоже вы вмешались в процесс авто-голосования, если это не так и это является ошибкой - сообщите разработчику, вот что известно: ' + request.message
+                request.ignoreReport = true
+
+                clearInterval(timer)
+                await wait(Math.floor(Math.random() * 9000 + 1000))
+                chrome.runtime.sendMessage(request)
+            }
+        }
+    } catch (e) {
+        clearInterval(timer)
+        throwError(e)
+    }
+}, 200)
