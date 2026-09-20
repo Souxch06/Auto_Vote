@@ -776,6 +776,8 @@ function resetEdit(project) {
     document.getElementById('randomize').dispatchEvent(new Event('change'))
     document.getElementById('voteMode').checked = false
     document.getElementById('voteMode').dispatchEvent(new Event('change'))
+    document.getElementById('entryUrl').value = ''
+    document.getElementById('entryButton').value = ''
     document.getElementById('rating').value = ''
     document.getElementById('rating').dispatchEvent(new Event('input'))
     document.querySelector('#addTab img').src = 'images/icons/addBtn.svg'
@@ -903,6 +905,13 @@ function editProject(project, switchToEdit) {
         document.getElementById('randomizeMax').value = project.randomize.max
         document.getElementById('randomize').checked = true
         document.getElementById('randomize').dispatchEvent(new Event('change'))
+    }
+
+    if (project.entryUrl) {
+        document.getElementById('entryUrl').value = project.entryUrl
+    }
+    if (project.entryButton) {
+        document.getElementById('entryButton').value = project.entryButton
     }
 
     if (project.rating === 'Custom') {
@@ -1121,6 +1130,14 @@ document.getElementById('append').addEventListener('submit', async(event)=>{
         if (document.getElementById('randomize').checked) {
             project.randomize = {min: document.getElementById('randomizeMin').valueAsNumber, max: document.getElementById('randomizeMax').valueAsNumber}
         }
+
+        //Страница входа (entryUrl) и кнопка на ней (entryButton)
+        delete project.entryUrl
+        delete project.entryButton
+        const entryUrl = document.getElementById('entryUrl').value.trim()
+        const entryButton = document.getElementById('entryButton').value.trim()
+        if (entryUrl) project.entryUrl = entryUrl
+        if (entryButton) project.entryButton = entryButton
     }
 
     if (project.rating === 'Custom') {
@@ -1699,7 +1716,7 @@ function getUrlProjects(element) {
     const url = new URL(document.location.href)
     for(let [key, value] of url.searchParams) {
         if (key === 'top') key = 'rating' // TODO временный код
-        if (key === 'rating' || key === 'nick' || key === 'id' || key === 'game' || key === 'listing' || key === 'lang' || key === 'maxCountVote' || key === 'ordinalWorld' || key === 'addition') {
+        if (key === 'rating' || key === 'nick' || key === 'id' || key === 'game' || key === 'listing' || key === 'lang' || key === 'maxCountVote' || key === 'ordinalWorld' || key === 'addition' || key === 'entryUrl' || key === 'entryButton') {
             if (key !== 'rating' && !project.rating) continue
 
             if (key === 'rating' && Object.keys(project).length > 0) {

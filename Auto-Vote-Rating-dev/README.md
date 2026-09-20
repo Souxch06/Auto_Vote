@@ -11,6 +11,16 @@
 - Respect websites’ ToS. Use responsibly. If automation isn’t appropriate, the extension will prompt for manual solve/delay.
 - Free audio to text api ( 100 usage per day free or replace by yours )
 
+# Entry page (generic pre-vote button click)
+Some servers don't expose the voting form directly: the voting URL first shows a landing page with a button (for example `https://myserver.net/vote` with a "Voter" button) that redirects to the actual vote page. Auto Vote Rating can handle this **generically**, for any supported site, without hardcoding a specific server:
+
+1. In the project's options (expert mode → advanced settings) set:
+   - **Entry URL (optional)** — the URL to open before voting. Can be a relative path (e.g. `/vote`, resolved against the site's vote URL) or a full URL.
+   - **Entry button (optional)** — the button to click on that page: a CSS selector (`#vote-btn`, `.vote-button`) or the button text (`Vote`, `Voter`).
+2. The extension opens the entry URL, waits for the button (it may be loaded dynamically, the page is checked every 0.5 s), clicks it **only once** and waits for the redirect (full page load, SPA navigation, or a new tab opened by the button).
+3. The existing Auto Vote Rating scripts then complete the vote on the redirected page, exactly as usual.
+4. **CAPTCHA:** if a CAPTCHA appears on the entry page, the extension pauses, sends a notification and waits for you to solve it manually, then resumes. CAPTCHAs are never solved automatically.
+
 # Supported sites
 <details>
 <summary>View the full list</summary>

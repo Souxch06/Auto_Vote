@@ -785,7 +785,7 @@
   "here": {
     "message": "hier"
   },
-  "notRegVK":{
+  "notRegVK": {
     "message": "Die Registrierung dieses Kontos ist nicht abgeschlossen (Telefonnummer ist nicht angegeben)"
   },
   "version": {
@@ -805,5 +805,29 @@
   },
   "projectDeleted": {
     "message": "Das Projekt wurde vom Benutzer gelöscht"
+  },
+  "entryUrl": {
+    "message": "Einstiegs-URL (optional)"
+  },
+  "entryUrlTooltip": {
+    "message": "Die URL, die vor der Abstimmung geöffnet wird. Kann ein relativer Pfad sein (z. B. /vote, bezogen auf die Abstimm-URL der Seite) oder eine vollständige URL (z. B. https://mysite.net/vote). Die Erweiterung öffnet zuerst diese Seite, klickt dann die Einstiegstaste und führt die Abstimmung auf der Seite durch, auf die die Taste weiterleitet."
+  },
+  "entryButton": {
+    "message": "Einstiegstaste (optional)"
+  },
+  "entryButtonTooltip": {
+    "message": "Die Taste, die auf der Einstiegsseite angeklickt werden soll: ein CSS-Selektor (z. B. #vote-btn oder .vote-button) oder der Tastentext (z. B. Vote, Voter). Die Taste kann dynamisch geladen werden, die Seite wird alle 0,5 Sekunden überprüft. Die Taste wird nur einmal angeklickt. Wenn ein CAPTCHA erscheint, pausiert die Erweiterung und wartet, bis du es manuell löst, dann geht sie weiter. Kein CAPTCHA wird automatisch gelöst."
+  },
+  "entryButtonNotFound": {
+    "message": "Die Einstiegstaste wurde auf der Einstiegsseite nicht gefunden"
+  },
+  "entryTimeout": {
+    "message": "Die Seite hat nach dem Klick auf die Einstiegstaste nicht weitergeleitet"
+  },
+  "entryLoop": {
+    "message": "Die Einstiegsseite lädt nach dem Tasten-Klick immer wieder neu, der Versuch wurde abgebrochen, um eine Endlosschleife zu vermeiden"
+  },
+  "entryNoConfig": {
+    "message": "Das Einstiegsseiten-Skript hat keine Einstellungen erhalten"
   }
 }

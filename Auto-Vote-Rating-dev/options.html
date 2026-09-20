@@ -270,6 +270,24 @@
                             <input class="checkbox" id="voteMode" type="checkbox" name="voteMode" disabled/>
                             <label data-resource="voteMode" for="voteMode"></label>
                         </div>
+                        <!--Страница входа: URL, которую открыть перед голосованием-->
+                        <div class="input-block">
+                            <label for="entryUrl" data-resource="entryUrl">
+                                <span class="tooltip1">
+                                    <span class="tooltip1text" data-resource="entryUrlTooltip"></span>
+                                </span>
+                            </label>
+                            <input id="entryUrl" name="entryUrl" type="text" class="input" spellcheck="false">
+                        </div>
+                        <!--Кнопка на странице входа, которую нужно нажать-->
+                        <div class="input-block">
+                            <label for="entryButton" data-resource="entryButton">
+                                <span class="tooltip1">
+                                    <span class="tooltip1text" data-resource="entryButtonTooltip"></span>
+                                </span>
+                            </label>
+                            <input id="entryButton" name="entryButton" type="text" class="input" spellcheck="false">
+                        </div>
                     </div>
                 </form>
             </div>

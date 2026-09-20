@@ -848,7 +848,7 @@
   "here": {
     "message": "here"
   },
-  "notRegVK":{
+  "notRegVK": {
     "message": "VKontakte authorization error: Registration is not completed (it looks like the phone number is not specified)"
   },
   "version": {
@@ -1124,5 +1124,29 @@
   },
   "never": {
     "message": "Never"
+  },
+  "entryUrl": {
+    "message": "Entry URL (optional)"
+  },
+  "entryUrlTooltip": {
+    "message": "The URL to open before voting. Can be a relative path (for example /vote, resolved against the site’s vote URL) or a full URL (for example https://mysite.net/vote). The extension opens this page first, then the entry button is clicked and the vote is completed on the page the button redirects to."
+  },
+  "entryButton": {
+    "message": "Entry button (optional)"
+  },
+  "entryButtonTooltip": {
+    "message": "The button to click on the entry page: a CSS selector (for example #vote-btn or .vote-button) or the button text (for example Vote, Voter). The button can be loaded dynamically, the page is checked every 0.5 seconds. The button is clicked only once. If a CAPTCHA appears, the extension pauses and waits for you to solve it manually, then continues. No CAPTCHA is solved automatically."
+  },
+  "entryButtonNotFound": {
+    "message": "The entry button was not found on the entry page"
+  },
+  "entryTimeout": {
+    "message": "The page did not redirect after the entry button was clicked"
+  },
+  "entryLoop": {
+    "message": "The entry page keeps reloading after the button click, the attempt was aborted to avoid an infinite loop"
+  },
+  "entryNoConfig": {
+    "message": "The entry page script did not receive its settings"
   }
 }

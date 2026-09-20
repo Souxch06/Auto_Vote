@@ -294,7 +294,18 @@ async function newWindow(project, opened) {
         result = await promiseWindow
         if (result === false) return
 
-        const url = allProjects[project.rating].voteURL(project)
+        let url = allProjects[project.rating].voteURL(project)
+        //Если у проекта задана страница входа (entryUrl), сначала открываем её;
+        //скрипт scripts/main/entry.js сам нажмёт кнопку (entryButton) и дождётся редиректа,
+        //после чего обычный скрипт голосования обработает страницу
+        if (project.entryUrl) {
+            const entryURL = getEntryURL(project)
+            if (entryURL) {
+                url = entryURL
+            } else {
+                console.warn(getProjectPrefix(project, true), 'Некорректный entryUrl, игнорируем:', project.entryUrl)
+            }
+        }
 
         let tab = await tryOpenTab({url, active: settings.disabledFocusedTab || Boolean(allProjects[project.rating].focusedTab?.(project))}, project, 0)
         if (tab == null) return
@@ -473,7 +484,7 @@ async function checkResponseError(project, response, url, bypassCodes, vk) {
     return true
 }
 
-const webNavigationOnCommittedListener = function(details) {
+const webNavigationOnCommittedListener = async function(details) {
     if (!initializeFunc.done) {
         (async () => {
             await initializeFunc
@@ -491,6 +502,31 @@ const webNavigationOnCommittedListener = function(details) {
     }
 
     let opened = openedProjects.get(details.tabId)
+
+    //Вкладка открылась со страницы входа (например кнопка entryButton с target="_blank"):
+    //берём её как вкладку голосования и закрываем вкладку страницы входа.
+    //Условие "не та же URL" защищает от случайных вкладок, открытых пользователем со страницы входа
+    if (!opened && details.frameId === 0) {
+        try {
+            const tab = await chrome.tabs.get(details.tabId)
+            const opener = (tab.openerTabId != null && openedProjects.get(tab.openerTabId)) || null
+            if (opener && opener.entryPage && !opener.entryAdopted) {
+                const openerProject = await db.get('projects', opener.key)
+                const openerEntryURL = (openerProject?.entryUrl && openerProject?.entryButton) ? getEntryURL(openerProject) : null
+                if (!openerEntryURL || !isSameOriginPath(details.url, openerEntryURL)) {
+                    opener.entryAdopted = true
+                    openedProjects.delete(tab.openerTabId)
+                    openedProjects.set(details.tabId, opener)
+                    db.put('other', openedProjects, 'openedProjects')
+                    opened = opener
+                    tryCloseTab(tab.openerTabId, openerProject, 0)
+                }
+            }
+        } catch (error) {
+            //Вкладка уже закрыта — ничего не делаем
+        }
+    }
+
     if (!opened) return
     if (details.url.startsWith('blob:')) return
     const filesIsolated = []
@@ -589,6 +625,34 @@ const webNavigationOnCompletedListener = async function(details) {
             return
         }
 
+        //Страница входа (entryUrl): вместо обычного скрипта голосования внедряем
+        //scripts/main/entry.js, который найдёт кнопку (entryButton), нажмёт её один раз
+        //и дождётся редиректа; после редиректа обычный скрипт голосования возьмёт работу на себя.
+        //entryClicked=true означает что кнопка уже была нажата и страница перезагрузилась
+        //на том же URL — значит это уже страница голосования, запускаем обычный скрипт.
+        const entryURL = (project.entryUrl && project.entryButton) ? getEntryURL(project) : null
+        if (entryURL && !opened.entryClicked && isSameOriginPath(details.url, entryURL)) {
+            //Защита от бесконечной петли (например кнопка отправляет форму на тот же URL)
+            opened.entryAttempts = (opened.entryAttempts || 0) + 1
+            if (opened.entryAttempts > 5) {
+                endVote({entryLoop: true}, {tab: {id: details.tabId}, url: details.url}, opened)
+                return
+            }
+            try {
+                if (settings.debug) console.log('Injecting scripts/main/entry.js to ' + details.url)
+                await chrome.scripting.executeScript({target: {tabId: details.tabId}, files: ['scripts/main/hacktimer.js', 'scripts/main/entry.js']})
+                await chrome.tabs.sendMessage(details.tabId, {sendEntry: true, project, settings})
+                if (openedProjects.has(details.tabId)) {
+                    opened.entryPage = true
+                    opened.countInject = (opened.countInject || 0) + 1
+                    db.put('other', openedProjects, 'openedProjects')
+                }
+            } catch (error) {
+                catchTabError(error, project)
+            }
+            return
+        }
+
         try {
             if (allProjects[project.rating]?.needPrompt?.()) {
                 const funcPrompt = function(nick) {
@@ -614,13 +678,16 @@ const webNavigationOnCompletedListener = async function(details) {
             await chrome.tabs.sendMessage(details.tabId, {sendProject: true, project, settings})
 
             if (openedProjects.has(details.tabId)) {
+                //Фазы "страница входа" закончились — обычный скрипт голосования запущен.
+                //Снимаем метку, чтобы всплывающие окна (например авторизация) не были приняты за страницу входа
+                delete opened.entryPage
                 opened.countInject++
                 db.put('other', openedProjects, 'openedProjects')
             }
         } catch (error) {
             catchTabError(error, project)
         }
-    } else if (details.frameId !== 0 && (        
+    } else if (details.frameId !== 0 && (
         details.url.match(/hcaptcha.com\/captcha\/*/)
         || details.url.includes('smartcaptcha.yandexcloud.net')
         || details.url.includes('service.mtcaptcha.com')
@@ -872,7 +939,46 @@ async function onRuntimeMessage(request, sender, sendResponse) {
 
     await initializeFunc
 
-    if (request === 'checkVote') {
+    if (request.entryClicked) {
+        //Кнопка на странице входа была нажата. Если страница перезагрузится на том же URL
+        //(форма на тот же адрес, редирект туда же), webNavigation.onCompleted поймёт,
+        //что клик уже был, и запустит обычный скрипт голосования вместо entry.js
+        if (openedProjects.has(sender.tab.id)) {
+            const opened = openedProjects.get(sender.tab.id)
+            if (!opened.entryClicked) {
+                opened.entryClicked = true
+                db.put('other', openedProjects, 'openedProjects')
+            }
+        }
+        return
+    } else if (request.entryRedirected) {
+        //Редирект со страницы входа произошёл без полной перезагрузки страницы (SPA):
+        //внедряем обычный скрипт голосования прямо в текущую страницу
+        if (!openedProjects.has(sender.tab.id)) {
+            console.warn('A double attempt to complete the vote? entryRedirected, has openedProjects', JSON.stringify(request), JSON.stringify(sender))
+            return
+        }
+        const opened = openedProjects.get(sender.tab.id)
+        const project = await db.get('projects', opened.key)
+        try {
+            if (settings.debug) console.log('Injecting scripts/' + (project.ratingMain || project.rating) + '.js, scripts/main/api.js (entryRedirected)')
+            await chrome.scripting.executeScript({target: {tabId: sender.tab.id}, files: ['scripts/main/hacktimer.js', 'scripts/' + (project.ratingMain || project.rating) + '.js', 'scripts/main/api.js']})
+            // noinspection JSUnresolvedVariable,JSUnresolvedFunction
+            if (allProjects[project.rating]?.needWorld?.()) {
+                await chrome.scripting.executeScript({target: {tabId: sender.tab.id}, world: 'MAIN', files: ['scripts/' + (project.ratingMain || project.rating) + '_world.js']})
+            }
+            await chrome.tabs.sendMessage(sender.tab.id, {sendProject: true, project, settings})
+            if (openedProjects.has(sender.tab.id)) {
+                //Фазы "страница входа" закончились — снимаем метку (аналогично webNavigation.onCompleted)
+                delete opened.entryPage
+                opened.countInject = (opened.countInject || 0) + 1
+                db.put('other', openedProjects, 'openedProjects')
+            }
+        } catch (error) {
+            catchTabError(error, project)
+        }
+        return
+    } else if (request === 'checkVote') {
         checkVote()
         return
     } else if (request === 'reloadAllSettings') {
@@ -1473,6 +1579,31 @@ function getProjectPrefix(project, detailed) {
 
 function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+//Разрешает entryUrl проекта: полная URL (http/https) или путь (например /vote),
+//который разрешается относительно домена сайта (https://домен/vote)
+function getEntryURL(project) {
+    if (!project.entryUrl) return null
+    if (/^https?:\/\//i.test(project.entryUrl)) return project.entryUrl
+    try {
+        const base = allProjects[project.rating]?.voteURL?.(project) || 'https://' + project.rating
+        const entry = project.entryUrl.startsWith('/') ? project.entryUrl : '/' + project.entryUrl
+        return new URL(entry, base).href
+    } catch (error) {
+        return null
+    }
+}
+
+//Сравнивает URL без учёта query/hash (origin + pathname)
+function isSameOriginPath(url, other) {
+    try {
+        const a = new URL(url)
+        const b = new URL(other)
+        return a.origin === b.origin && a.pathname === b.pathname
+    } catch (error) {
+        return false
+    }
 }
 
 async function updateValue(objStore, value) {
