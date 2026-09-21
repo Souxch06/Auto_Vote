@@ -862,5 +862,11 @@
   },
   "voteSitePlaceholder": {
     "message": "URL der Vote-Seite (z. B. https://topcraft.club/servers/123/vote)"
+  },
+  "serverPageDetected": {
+    "message": "Diese Seite listet $1 Vote-Seite(n) auf. Gib unten deinen Nickname ein und klicke erneut auf „Hinzufügen“."
+  },
+  "serverPageNoSites": {
+    "message": "Auf dieser Seite wurde keine bekannte Vote-Seite gefunden — sie kann nicht als Serverseite hinzugefügt werden. Füge sie manuell mit dem Typ „Mehrere Votes (Server)“ hinzu."
   }
 }

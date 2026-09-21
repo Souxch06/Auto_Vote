@@ -414,6 +414,84 @@ async function test(name, fn) {
         assert.strictEqual(normalizeUrlValue('https://'), null)
     })
 
+    // ---------- detectServerVotingSites (options.js, détection auto des sites) ----------
+    const psrc = fs.readFileSync(path.join(ROOT, 'projects.js'), 'utf8')
+    const pstart = psrc.indexOf('const getDomainWithoutSubdomain')
+    const pend = psrc.indexOf('function extractHostname')
+    const getDomainWithoutSubdomain = new Function(psrc.slice(pstart, pend) + '\nreturn getDomainWithoutSubdomain')()
+
+    const stubAllProjects = {'serveur-prive.net': {}, 'serveur-minecraft.com': {}, 'serveursminecraft.org': {}}
+    const fakeChrome = {i18n: {getMessage: (k) => k}}
+    class FakeDOMParser {
+        parseFromString(html) {
+            const hrefs = [...html.matchAll(/<a[^>]+href="([^"]*)"/g)].map(m => m[1])
+            const title = (html.match(/<title>([^<]*)<\/title>/) || [])[1] || ''
+            return {
+                querySelectorAll: (sel) => (sel === 'a[href]' ? hrefs.map(h => ({getAttribute: () => h})) : []),
+                querySelector: (sel) => (sel === 'title' ? {textContent: title} : null)
+            }
+        }
+    }
+    async function makeDetector(fetchImpl) {
+        const osrc = fs.readFileSync(path.join(ROOT, 'options.js'), 'utf8')
+        const dstart = osrc.indexOf('async function detectServerVotingSites')
+        const dend = osrc.indexOf('//Multi-vote: динамический список')
+        assert.ok(dstart >= 0 && dend > dstart, 'function detectServerVotingSites introuvable')
+        const notifs = []
+        const detect = new Function('fetch', 'DOMParser', 'chrome', 'createNotif', 'getDomainWithoutSubdomain', 'allProjects', 'URL',
+            osrc.slice(dstart, dend) + '\nreturn detectServerVotingSites')(
+            fetchImpl, FakeDOMParser, fakeChrome, (m) => notifs.push(m), getDomainWithoutSubdomain, stubAllProjects, URL
+        )
+        return {detect, notifs}
+    }
+
+    const skyHtml = `<html><head><title>Vote | SkyOfSkill</title></head><body>
+<a href="https://serveur-prive.net/minecraft/skyofskill-serveur-minecraft-prison/vote">Voter</a>
+<a href="https://serveur-minecraft.com/5834">Voter</a>
+<a href="https://www.serveursminecraft.org/serveur/3136/">Voter</a>
+<a href="https://www.youtube.com/watch?v=xyz">Tutoriel vidéo</a>
+<a href="/jouer">Guide</a>
+<a href="https://serveur-minecraft.com/5834">Dupliqué</a>
+</body></html>`
+
+    await test('detectServerVotingSites : page SkyOfSkill → les 3 sites de vote (ordre, dédup)', async () => {
+        const {detect} = await makeDetector(async (url) => ({ok: true, status: 200, url, text: async () => skyHtml}))
+        const r = await detect('https://skyofskill.fr/vote')
+        assert.deepStrictEqual(r.sites, [
+            'https://serveur-prive.net/minecraft/skyofskill-serveur-minecraft-prison/vote',
+            'https://serveur-minecraft.com/5834',
+            'https://www.serveursminecraft.org/serveur/3136/'
+        ])
+        assert.strictEqual(r.title, 'Vote | SkyOfSkill')
+    })
+
+    await test('detectServerVotingSites : aucun site connu → null + notification', async () => {
+        const {detect, notifs} = await makeDetector(async (url) => ({
+            ok: true, status: 200, url, text: async () => '<html><head><title>X</title></head><body><a href="https://inconnu.com/vote">Voter</a></body></html>'
+        }))
+        const r = await detect('https://mystore.fr/vote')
+        assert.strictEqual(r, null)
+        assert.deepStrictEqual(notifs, ['serverPageNoSites'])
+    })
+
+    await test('detectServerVotingSites : fetch impossible → null + notConnectInternet', async () => {
+        const {detect, notifs} = await makeDetector(async () => {
+            const e = new TypeError('Failed to fetch')
+            e.message = 'Failed to fetch'
+            throw e
+        })
+        const r = await detect('https://skyofskill.fr/vote')
+        assert.strictEqual(r, null)
+        assert.deepStrictEqual(notifs, ['notConnectInternet'])
+    })
+
+    await test('detectServerVotingSites : page 404 → null + notConnect', async () => {
+        const {detect, notifs} = await makeDetector(async (url) => ({ok: false, status: 404, url, text: async () => ''}))
+        const r = await detect('https://skyofskill.fr/vote')
+        assert.strictEqual(r, null)
+        assert.deepStrictEqual(notifs, ['notConnect'])
+    })
+
     // ---------- Rapport ----------
     for (const [status, name] of results) {
         console.log(status, '-', name)

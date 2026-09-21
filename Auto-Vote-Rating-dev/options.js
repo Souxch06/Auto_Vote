@@ -960,6 +960,72 @@ function normalizeUrlValue(value) {
     }
 }
 
+//Кэш последней обнаруженной страницы сервера (чтобы не перечитывать её
+//на следующем клике, когда пользователь только вводит псевдо)
+let lastLinkDetection = null
+
+//Читает страницу сервера (режим «Ссылка», домен не является сайтом
+//голосования) и находит на ней все известные сайты голосования, на которые
+//страница ссылается (например https://skyofskill.fr/vote →
+//serveur-prive.net, serveur-minecraft.com, serveursminecraft.org).
+//Возвращает {sites, title} или null (ошибка показана уведомлением)
+async function detectServerVotingSites(url) {
+    let response
+    try {
+        response = await fetch(url, {credentials: 'include'})
+    } catch (error) {
+        //fetch a échoué (réseau/CORS/DNS) : aucun HTTP renvoyé
+        createNotif(chrome.i18n.getMessage('notConnectInternet'), 'error')
+        return null
+    }
+    if (!response.ok && response.status !== 403 && response.status !== 503) {
+        let domain
+        try {
+            domain = getDomainWithoutSubdomain(url)
+        } catch (error) {
+            domain = url
+        }
+        createNotif(chrome.i18n.getMessage('notConnect', [domain, String(response.status)]), 'error')
+        return null
+    }
+    let html
+    try {
+        html = await response.text()
+    } catch (error) {
+        createNotif(chrome.i18n.getMessage('notConnectInternet'), 'error')
+        return null
+    }
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const title = doc.querySelector('title')?.textContent?.trim() || ''
+    const found = []
+    const seen = new Set()
+    for (const a of doc.querySelectorAll('a[href]')) {
+        let href
+        try {
+            href = new URL(a.getAttribute('href'), response.url).href
+        } catch (error) {
+            continue
+        }
+        if (!/^https?:\/\//i.test(href)) continue
+        let d
+        try {
+            d = getDomainWithoutSubdomain(href)
+        } catch (error) {
+            continue
+        }
+        //Ссылка на известный сайт голосования — берём её (каждая URL один раз)
+        if (allProjects[d] && !seen.has(href)) {
+            seen.add(href)
+            found.push(href)
+        }
+    }
+    if (!found.length) {
+        createNotif(chrome.i18n.getMessage('serverPageNoSites'), 'error')
+        return null
+    }
+    return {sites: found, title}
+}
+
 //Multi-vote: динамический список сайтов голосования сервера (по одной URL на строку)
 function msAddSiteRow(url) {
     const row = document.createElement('div')
@@ -1016,19 +1082,63 @@ document.getElementById('append').addEventListener('submit', async(event)=>{
     if (!document.getElementById('switchAddMode').checked) {
         const url = document.getElementById('link').value
         try {
-            domain = getDomainWithoutSubdomain(url)
+            const normalizedUrl = normalizeUrlValue(url)
+            domain = getDomainWithoutSubdomain(normalizedUrl || url)
             funcRating = allProjects[domain]
             if (!funcRating) {
-                createNotif(chrome.i18n.getMessage('errorLink', domain), 'error')
-                event.submitter.disabled = false
-                return
+                //Может быть страница сервера с перечнем сайтов голосования
+                //(например https://skyofskill.fr/vote): читаем страницу и
+                //автоматически находим все известные сайты голосования,
+                //на которые она ссылается → создаём проект Multi-vote
+                const normalized = normalizedUrl
+                if (!normalized) {
+                    createNotif(chrome.i18n.getMessage('errorLink', domain), 'error')
+                    event.submitter.disabled = false
+                    return
+                }
+                let detected = (lastLinkDetection && lastLinkDetection.url === normalized) ? lastLinkDetection : null
+                if (!detected) {
+                    //Права на страницу сервера нужны, чтобы её прочитать
+                    const tmpProject = {rating: 'MultiSite', serverUrl: normalized, votingUrls: []}
+                    if (await checkPermissions([tmpProject])) {
+                        const result = await detectServerVotingSites(normalized)
+                        //Права на все найденные сайты голосования — одним окном
+                        if (result && await checkPermissions([{rating: 'MultiSite', serverUrl: normalized, votingUrls: result.sites}])) {
+                            detected = {url: normalized, sites: result.sites, title: result.title}
+                            lastLinkDetection = detected
+                        }
+                    }
+                }
+                if (!detected) {
+                    event.submitter.disabled = false
+                    return
+                }
+                funcRating = allProjects['MultiSite']
+                project.rating = 'MultiSite'
+                project.serverUrl = detected.url
+                project.votingUrls = detected.sites
+                //Заполняем поля Multi-vote (в режиме «Ссылка» они скрыты),
+                //чтобы общая валидация ниже сработала как обычно
+                document.getElementById('serverUrl').value = detected.url
+                if (detected.title) document.getElementById('serverName').value = detected.title
+                msSetSites(detected.sites)
+                //Псевдо вводится один раз в начале — используется на всех сайтах голосования
+                document.getElementById('nick').parentElement.removeAttribute('style')
+                document.getElementById('nick').required = true
+                if (!document.getElementById('nick').value.trim()) {
+                    createNotif(chrome.i18n.getMessage('serverPageDetected', String(detected.sites.length)), 'hint')
+                    event.submitter.disabled = false
+                    return
+                }
             }
-            project = funcRating.parseURL(new URL(url))
-            project.rating = domain
-            if (funcRating.URLMain) {
-                const domain2 = funcRating.URLMain?.()
-                if (domain2 !== domain) {
-                    project.ratingMain = domain2
+            if (project.rating !== 'MultiSite') {
+                project = funcRating.parseURL(new URL(url))
+                project.rating = domain
+                if (funcRating.URLMain) {
+                    const domain2 = funcRating.URLMain?.()
+                    if (domain2 !== domain) {
+                        project.ratingMain = domain2
+                    }
                 }
             }
 
@@ -2222,6 +2332,7 @@ document.getElementById('todayStats').addEventListener('click', async()=> {
 let laterChoose = false
 document.getElementById('link').addEventListener('input', linkChanged)
 function linkChanged(event, reset) {
+    lastLinkDetection = null
     if (laterChoose || reset) {
         document.getElementById('nick').parentElement.style.display = 'none'
         document.getElementById('nick').required = false

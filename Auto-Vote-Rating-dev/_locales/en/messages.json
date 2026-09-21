@@ -1181,5 +1181,11 @@
   },
   "voteSitePlaceholder": {
     "message": "Voting site URL (e.g. https://topcraft.club/servers/123/vote)"
+  },
+  "serverPageDetected": {
+    "message": "This page lists $1 voting site(s). Enter your nickname below, then click “Add” again."
+  },
+  "serverPageNoSites": {
+    "message": "No known voting site was found on this page — it can't be added as a server page. Add it manually with the type “Multi-votes (server)”."
   }
 }

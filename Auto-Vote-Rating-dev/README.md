@@ -24,6 +24,8 @@ Some servers don't expose the voting form directly: the voting URL first shows a
 # Multi-votes (server cycle)
 Many servers want you to vote on **several voting sites at once** (topcraft, mctop, mcrate, …). With the **Multi-votes (server)** project type, Auto Vote Rating runs a full cycle for your server automatically, in a single tab:
 
+**Shortcut — paste your server page in the usual link field:** in the default **Link** mode, put your server's vote page (for example `https://skyofskill.fr/vote`) into the normal “Link” input instead of a voting-site URL. The extension reads that page, automatically finds every supported voting site it links to, and creates the Multi-votes project with that page as the hub — you only have to enter your nickname (once) and click Add again. If the page doesn't link to any known voting site, a notification tells you to add the project manually (step 1 below).
+
 1. In the Add tab choose the type **Multi-votes (server)** and fill in:
    - **Nickname** — your Minecraft nickname, entered once at the top and used on every voting site.
    - **Server name (optional)** — your own label for the server.
