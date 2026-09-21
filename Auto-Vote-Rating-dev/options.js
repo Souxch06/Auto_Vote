@@ -780,7 +780,7 @@ function resetEdit(project) {
     document.getElementById('entryButton').value = ''
     document.getElementById('serverName').value = ''
     document.getElementById('serverUrl').value = ''
-    document.getElementById('votingUrls').value = ''
+    msSetSites([])
     document.getElementById('voteVerify').value = ''
     document.getElementById('rating').value = ''
     document.getElementById('rating').dispatchEvent(new Event('input'))
@@ -921,7 +921,7 @@ function editProject(project, switchToEdit) {
     if (project.rating === 'MultiSite') {
         document.getElementById('serverName').value = project.name || ''
         document.getElementById('serverUrl').value = project.serverUrl || ''
-        document.getElementById('votingUrls').value = (project.votingUrls || []).join('\n')
+        msSetSites(project.votingUrls || [])
         document.getElementById('voteVerify').value = project.voteVerify || ''
     }
 
@@ -959,6 +959,50 @@ function normalizeUrlValue(value) {
         return null
     }
 }
+
+//Multi-vote: динамический список сайтов голосования сервера (по одной URL на строку)
+function msAddSiteRow(url) {
+    const row = document.createElement('div')
+    row.className = 'msSiteRow'
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'input'
+    input.name = 'msSiteUrl'
+    input.spellcheck = false
+    input.placeholder = chrome.i18n.getMessage('voteSitePlaceholder')
+    input.value = url || ''
+    const removeBtn = document.createElement('button')
+    removeBtn.type = 'button'
+    removeBtn.className = 'msSiteRemove'
+    removeBtn.textContent = '×'
+    row.append(input, removeBtn)
+    document.getElementById('msSitesList').append(row)
+    return row
+}
+
+//Перерисовывает список (если список пустой — одна пустая строка)
+function msSetSites(urls) {
+    const list = document.getElementById('msSitesList')
+    list.replaceChildren()
+    if (!urls.length) urls = ['']
+    for (const url of urls) msAddSiteRow(url)
+}
+
+//Собирает введённые URL сайтов голосования (без пустых строк)
+function msSiteUrls() {
+    return Array.from(document.querySelectorAll('#msSitesList .msSiteRow input'))
+        .map(i => i.value.trim())
+        .filter(Boolean)
+}
+document.getElementById('msAddSite').addEventListener('click', () => {
+    msAddSiteRow('').querySelector('input').focus()
+})
+document.getElementById('msSitesList').addEventListener('click', (e) => {
+    if (!e.target.classList.contains('msSiteRemove')) return
+    e.target.closest('.msSiteRow').remove()
+    //Всегда оставляем минимум одну строку
+    if (!document.getElementById('msSitesList').childElementCount) msAddSiteRow('')
+})
 
 //Слушатель кнопки "Добавить"
 document.getElementById('append').addEventListener('submit', async(event)=>{
@@ -1172,9 +1216,8 @@ document.getElementById('append').addEventListener('submit', async(event)=>{
             delete project.name
         }
         const serverUrl = normalizeUrlValue(document.getElementById('serverUrl').value)
-        const votingUrls = document.getElementById('votingUrls').value
-            .split('\n').map(s => s.trim()).filter(s => s)
-            .map(normalizeUrlValue)
+        const rawSiteUrls = msSiteUrls()
+        const votingUrls = rawSiteUrls.map(normalizeUrlValue)
         if (!serverUrl) {
             createNotif(chrome.i18n.getMessage('errorLink', 'serverUrl'), 'error')
             event.submitter.disabled = false
@@ -2290,7 +2333,7 @@ function ratingChanged(event, reset) {
         document.getElementById('responseURL').parentElement.style.display = 'none'
         document.getElementById('serverName').parentElement.style.display = 'none'
         document.getElementById('serverUrl').parentElement.style.display = 'none'
-        document.getElementById('votingUrls').parentElement.style.display = 'none'
+        document.getElementById('votingUrls').style.display = 'none'
         document.getElementById('voteVerify').parentElement.style.display = 'none'
         laterChooseManual = false
         if (reset) return
@@ -2311,8 +2354,10 @@ function ratingChanged(event, reset) {
         document.getElementById('nick').required = true
         document.getElementById('serverName').parentElement.removeAttribute('style')
         document.getElementById('serverUrl').parentElement.removeAttribute('style')
-        document.getElementById('votingUrls').parentElement.removeAttribute('style')
+        document.getElementById('votingUrls').removeAttribute('style')
         document.getElementById('voteVerify').parentElement.removeAttribute('style')
+        //Une première ligne vide si la liste n'est pas encore remplie
+        if (!document.getElementById('msSitesList').childElementCount) msAddSiteRow('')
         return
     }
 

@@ -216,14 +216,15 @@
                             </label>
                             <input class="input" name="serverUrl" id="serverUrl" type="text" spellcheck="false">
                         </div>
-                        <!--URL сайтов голосования (Multi-vote), по одному на строку-->
-                        <div style="display: none;" class="input-block">
-                            <label for="votingUrls" data-resource="votingUrls">
+                        <!--Сайты голосования сервера (Multi-vote) — динамический список, один URL на сайт-->
+                        <div id="votingUrls" style="display: none;" class="input-block">
+                            <label data-resource="votingUrls">
                                 <span class="tooltip1">
                                     <span class="tooltip1text" data-resource="votingUrlsTooltip"></span>
                                 </span>
                             </label>
-                            <textarea id="votingUrls" name="votingUrls" class="textarea" rows="5" spellcheck="false"></textarea>
+                            <div id="msSitesList"></div>
+                            <button type="button" id="msAddSite" class="submitBtn" data-resource="addVoteSite" style="margin-top: 8px;"></button>
                         </div>
                         <!--Проверка валидности голоса на странице сервера (Multi-vote, необязательно)-->
                         <div style="display: none;" class="input-block">

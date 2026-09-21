@@ -401,7 +401,7 @@ async function test(name, fn) {
     await test('normalizeUrlValue : ajout https://, validation, null si invalide', async () => {
         const src = fs.readFileSync(path.join(ROOT, 'options.js'), 'utf8')
         const start = src.indexOf('function normalizeUrlValue')
-        const end = src.indexOf('//Слушатель кнопки "Добавить"')
+        const end = src.indexOf('//Multi-vote: динамический список')
         assert.ok(start >= 0 && end > start, 'function normalizeUrlValue introuvable')
         const normalizeUrlValue = new Function(src.slice(start, end) + '\nreturn normalizeUrlValue')()
 

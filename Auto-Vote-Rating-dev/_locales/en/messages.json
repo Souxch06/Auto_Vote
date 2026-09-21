@@ -1162,10 +1162,10 @@
     "message": "The page of your server where the votes are displayed. The extension opens it first, and after each vote it returns to this page (and, if verification is configured, checks that the vote was recorded) before moving to the next voting site."
   },
   "votingUrls": {
-    "message": "Voting sites URLs (one per line)"
+    "message": "Voting sites of the server"
   },
   "votingUrlsTooltip": {
-    "message": "A list of the voting site URLs for this server, one per line. Each URL is processed by its own built-in voting script. The sites are visited in the given order; sites that fail are retried on the next cycle."
+    "message": "One row per voting site — add as many rows as the server has (use “Add a voting site”). Each URL is processed by its own built-in voting script with the nickname entered above. The sites are visited in the order listed; sites that fail are retried on the next cycle. The protocol https:// is added automatically if missing."
   },
   "voteVerify": {
     "message": "Vote verification on the server page (optional)"
@@ -1175,5 +1175,11 @@
   },
   "multiSiteFailed": {
     "message": "The cycle finished with $1 voting site(s) that could not be completed"
+  },
+  "addVoteSite": {
+    "message": "+ Add a voting site"
+  },
+  "voteSitePlaceholder": {
+    "message": "Voting site URL (e.g. https://topcraft.club/servers/123/vote)"
   }
 }

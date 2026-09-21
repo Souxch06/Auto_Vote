@@ -25,9 +25,10 @@ Some servers don't expose the voting form directly: the voting URL first shows a
 Many servers want you to vote on **several voting sites at once** (topcraft, mctop, mcrate, …). With the **Multi-votes (server)** project type, Auto Vote Rating runs a full cycle for your server automatically, in a single tab:
 
 1. In the Add tab choose the type **Multi-votes (server)** and fill in:
+   - **Nickname** — your Minecraft nickname, entered once at the top and used on every voting site.
    - **Server name (optional)** — your own label for the server.
-   - **Server page URL (hub)** — the page of your server where the votes are displayed. It is opened at the start of each cycle and after every vote.
-   - **Voting sites URLs (one per line)** — the list of the voting sites for this server, in the order they should be visited. Each URL is handled by its own built-in voting script (any supported site can be mixed).
+   - **Server page URL (hub)** — the page of your server where the votes are displayed (for example `https://skyofskill.fr/vote`). It is opened at the start of each cycle and after every vote.
+   - **Voting sites of the server** — a dynamic list: one row per voting site, add as many rows as the server has (button “+ Add a voting site”). Each URL is handled by its own built-in voting script (any supported site can be mixed), for example `https://serveur-prive.net/minecraft/skyofskill-serveur-minecraft-prison/vote`, `https://serveur-minecraft.com/5834`, `https://www.serveursminecraft.org/serveur/3136/`.
    - **Vote verification on the server page (optional)** — a CSS selector or text to look for on the server page **after each vote** (for example a "Vote again" button that only appears once the vote was recorded).
 2. Cycle flow: for each voting site in the list → the vote is performed → the extension **returns to your server page** → the verification (if configured) confirms the vote was really counted (60 s, otherwise the site is counted as failed) → **next voting site**. This repeats until every site of the list has been visited.
 3. **Nothing is missed:** a failed or unverified site is counted, the cycle continues with the remaining sites, and the whole cycle is automatically repeated on the next attempt — so failed sites are retried. The extension notifies you per site when a vote fails.

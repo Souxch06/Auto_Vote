@@ -1359,3 +1359,39 @@ button:disabled {
 	margin-top: 15px;
 	color: #f1af4c;
 }
+/*Multi-vote: список сайтов голосования сервера (динамические строки)*/
+.msSiteRow {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin-bottom: 8px;
+}
+.msSiteRow .input {
+	flex: 1 1 auto;
+	width: auto;
+}
+.msSiteRemove {
+	flex: 0 0 auto;
+	display: block;
+	margin: 0;
+	border-radius: 5px;
+	border: none !important;
+	outline: none !important;
+	background: #d9534f;
+	color: #fff;
+	font-size: 16px;
+	line-height: 1;
+	padding: 9px 13px;
+	cursor: pointer;
+	transition: .2s opacity;
+	opacity: .9;
+}
+.msSiteRemove:hover {
+	opacity: 1;
+}
+#msAddSite {
+	display: block;
+	margin: 8px 0 0;
+	padding: 8px 16px;
+	font-size: 16px;
+}

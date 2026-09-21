@@ -843,10 +843,10 @@
     "message": "Die Seite deines Servers, auf der die Votes angezeigt werden. Die Erweiterung öffnet sie zuerst und kehrt nach jedem Vote zu dieser Seite zurück (und prüft bei konfigurierter Prüfung, ob der Vote erfasst wurde), bevor sie zur nächsten Vote-Seite wechselt."
   },
   "votingUrls": {
-    "message": "URLs der Vote-Seiten (eine pro Zeile)"
+    "message": "Vote-Seiten des Servers"
   },
   "votingUrlsTooltip": {
-    "message": "Eine Liste der URLs der Vote-Seiten für diesen Server, eine pro Zeile. Jede URL wird mit ihrem eigenen integrierten Vote-Skript verarbeitet. Die Seiten werden in der angegebenen Reihenfolge bevoteet; fehlgeschlagene Seiten werden im nächsten Zyklus wiederholt."
+    "message": "Eine Zeile pro Vote-Seite — so viele Zeilen hinzufügen, wie der Server hat („Vote-Seite hinzufügen“). Jede URL wird mit ihrem eigenen integrierten Vote-Skript und dem oben eingegebenen Nickname verarbeitet. Die Seiten werden in der angegeben Reihenfolge besucht; fehlgeschlagene Seiten werden im nächsten Zyklus wiederholt. Die Protokollangabe https:// wird automatisch ergänzt, falls fehlt."
   },
   "voteVerify": {
     "message": "Vote-Prüfung auf der Serverseite (optional)"
@@ -856,5 +856,11 @@
   },
   "multiSiteFailed": {
     "message": "Der Zyklus wurde beendet, $1 Vote-Seite(n) konnten nicht abgeschlossen werden"
+  },
+  "addVoteSite": {
+    "message": "+ Vote-Seite hinzufügen"
+  },
+  "voteSitePlaceholder": {
+    "message": "URL der Vote-Seite (z. B. https://topcraft.club/servers/123/vote)"
   }
 }
