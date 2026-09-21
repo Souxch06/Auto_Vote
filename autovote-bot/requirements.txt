@@ -1,0 +1,10 @@
+# Dépendances du bot (autovote-bot/).
+# Le noyau du bot est en stdlib pur ; seule la route « sans CAPTCHA » et le
+# sidecar solveur utilisent des paquets externes.
+#
+# Le sidecar (server.py, racine du repo) a SES propres dépendances, documentées
+# dans le requirements.txt de la racine : fastapi, uvicorn, cloakbrowser, …
+# On installe les deux dans le MÊME venv pour partager un seul navigateur.
+#
+# Le noyau du bot ne réclame AUCUNE de ces dépendances :
+#   python3 -m autovote_bot status   # marche sans rien installer

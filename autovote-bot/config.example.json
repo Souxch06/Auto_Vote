@@ -1,0 +1,35 @@
+{
+  "server": {
+    "name": "SkyOfSkill",
+    "hubUrl": "https://skyofskill.fr/vote",
+    "nick": "TonPseudoMinecraft",
+    "voteVerify": ""
+  },
+  "sites": [
+    {
+      "url": "https://serveur-prive.net/minecraft/skyofskill-serveur-minecraft-prison/vote",
+      "cooldownHours": 1.5
+    },
+    {
+      "url": "https://serveur-minecraft.com/5834",
+      "cooldownHours": 3
+    },
+    {
+      "url": "https://www.serveursminecraft.org/serveur/3136/",
+      "cooldownHours": 24
+    }
+  ],
+  "timing": {
+    "jitterMinutes": [5, 20],
+    "nightPause": ["02:00", "08:00"],
+    "pollSeconds": 60,
+    "gapBetweenSitesSeconds": 45
+  },
+  "solver": {
+    "baseUrl": "http://127.0.0.1:8877",
+    "autoStart": true,
+    "headless": false,
+    "timeoutSeconds": 180
+  },
+  "logFile": "bot.log"
+}
