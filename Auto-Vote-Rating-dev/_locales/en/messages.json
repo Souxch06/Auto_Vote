@@ -1187,5 +1187,11 @@
   },
   "serverPageNoSites": {
     "message": "No known voting site was found on this page — it can't be added as a server page. Add it manually with the type “Multi-votes (server)”."
+  },
+  "nightPause": {
+    "message": "Night pause (voting is not scheduled inside this time window)"
+  },
+  "nightPauseTooltip": {
+    "message": "Leave one field empty to disable. Any vote whose next attempt falls inside the window is delayed to its end (e.g. 02:00-08:00). The window may cross midnight (e.g. 23:00-01:00)."
   }
 }

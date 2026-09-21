@@ -868,5 +868,11 @@
   },
   "serverPageNoSites": {
     "message": "Auf dieser Seite wurde keine bekannte Vote-Seite gefunden — sie kann nicht als Serverseite hinzugefügt werden. Füge sie manuell mit dem Typ „Mehrere Votes (Server)“ hinzu."
+  },
+  "nightPause": {
+    "message": "Nachtpause (Innerhalb dieses Zeitfensters werden keine Votes geplant)"
+  },
+  "nightPauseTooltip": {
+    "message": "Ein Feld leer lassen zum Deaktivieren. Jeder Vote, dessen nächste Ausführung in das Fenster fällt, wird auf sein Ende verschoben (z. B. 02:00-08:00). Das Fenster darf Mitternacht überschreiten (z. B. 23:00-01:00)."
   }
 }

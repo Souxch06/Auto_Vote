@@ -239,6 +239,8 @@ async function restoreOptions(first) {
     document.getElementById('timeoutValue').value = settings.timeout
     document.getElementById('timeoutErrorValue').value = settings.timeoutError
     document.getElementById('timeoutVoteValue').value = settings.timeoutVote
+    document.getElementById('nightPauseStart').value = settings.nightPauseStart || ''
+    document.getElementById('nightPauseEnd').value = settings.nightPauseEnd || ''
     document.getElementById('disabledWarnCaptcha').checked = settings.disabledWarnCaptcha
     document.getElementById('disabledClickCaptcha').checked = settings.disabledClickCaptcha
     document.getElementById('disabledDebug').checked = settings.debug
@@ -631,6 +633,7 @@ for (const check of document.querySelectorAll('input[name=checkbox]')) {
                 document.getElementById('timeout').parentElement.removeAttribute('style')
                 document.getElementById('timeoutError').parentElement.removeAttribute('style')
                 document.getElementById('timeoutVote').parentElement.removeAttribute('style')
+                document.getElementById('nightPause').parentElement.removeAttribute('style')
                 document.getElementById('disabledOneVote').parentElement.removeAttribute('style')
                 document.getElementById('disabledDebug').parentElement.removeAttribute('style')
                 document.getElementById('disableCloseTabsOnSuccess').parentElement.removeAttribute('style')
@@ -643,6 +646,7 @@ for (const check of document.querySelectorAll('input[name=checkbox]')) {
                 document.getElementById('timeout').parentElement.style.display = 'none'
                 document.getElementById('timeoutError').parentElement.style.display = 'none'
                 document.getElementById('timeoutVote').parentElement.style.display = 'none'
+                document.getElementById('nightPause').parentElement.style.display = 'none'
                 document.getElementById('disabledOneVote').parentElement.style.display = 'none'
                 document.getElementById('disabledDebug').parentElement.style.display = 'none'
                 document.getElementById('disableCloseTabsOnSuccess').parentElement.style.display = 'none'
@@ -1458,6 +1462,18 @@ document.getElementById('timeoutVote').addEventListener('submit', async (event)=
     event.preventDefault()
     event.submitter.disabled = true
     settings.timeoutVote = document.getElementById('timeoutVoteValue').valueAsNumber
+    await db.put('other', settings, 'settings')
+    createNotif(chrome.i18n.getMessage('successSave'), 'success')
+    chrome.runtime.sendMessage('reloadSettings')
+    event.submitter.disabled = false
+})
+
+//Слушатель кнопки "Установить" на паузе ночной (пустое поле = пауза выключена)
+document.getElementById('nightPause').addEventListener('submit', async (event)=>{
+    event.preventDefault()
+    event.submitter.disabled = true
+    settings.nightPauseStart = document.getElementById('nightPauseStart').value || ''
+    settings.nightPauseEnd = document.getElementById('nightPauseEnd').value || ''
     await db.put('other', settings, 'settings')
     createNotif(chrome.i18n.getMessage('successSave'), 'success')
     chrome.runtime.sendMessage('reloadSettings')

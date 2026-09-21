@@ -456,6 +456,19 @@
                                 <button data-resource="setCooldown" type="submit" class="justBtn"></button>
                             </form>
                         </div>
+                        <!--Пауза ночная: окно, в которое голосования не планируются-->
+                        <div class="input-block" style="display: none">
+                            <label data-resource="nightPause" for="nightPauseStart">
+                                <span class="tooltip2">
+                                    <span data-resource="nightPauseTooltip" class="tooltip2text"></span>
+                                </span>
+                            </label>
+                            <form id="nightPause">
+                                <input class="input" name="nightPauseStart" id="nightPauseStart" type="time">
+                                <input class="input" name="nightPauseEnd" id="nightPauseEnd" type="time">
+                                <button data-resource="setCooldown" type="submit" class="justBtn"></button>
+                            </form>
+                        </div>
                         <div class="label-block">
                             <label data-resource="settingsFile"></label>
                         </div>

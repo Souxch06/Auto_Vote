@@ -1341,6 +1341,32 @@ async function tryGroupTabs(options, attempt) {
     }
 }
 
+//Пауза ночная: сдвигает запланированное время, попадающее в окно [старт, финиш),
+//на конец окна. Окно может пересекать полночь (например 23:00-01:00)
+function shiftOutOfNightWindow(timeMs, startStr, endStr) {
+    if (!startStr || !endStr) return timeMs
+    const toMin = (s) => {
+        const [h, m] = String(s).split(':').map(Number)
+        if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || h > 23 || m < 0 || m > 59) return null
+        return h * 60 + m
+    }
+    const startMin = toMin(startStr)
+    const endMin = toMin(endStr)
+    if (startMin == null || endMin == null || startMin === endMin) return timeMs
+    const t = new Date(timeMs)
+    const base = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime()
+    const inDay = (min) => base + min * 60000
+    if (startMin < endMin) {
+        //Окно в пределах одного дня
+        if (timeMs >= inDay(startMin) && timeMs < inDay(endMin)) return inDay(endMin)
+        return timeMs
+    }
+    //Окно пересекает полночь: [старт, 24:00) + [00:00, финиш)
+    if (timeMs >= inDay(startMin)) return inDay(endMin) + 86400000
+    if (timeMs < inDay(endMin)) return inDay(endMin)
+    return timeMs
+}
+
 //Завершает голосование, если есть ошибка то обрабатывает её
 async function endVote(request, sender, project) {
     let timeout = settings.timeout
@@ -1535,6 +1561,11 @@ async function endVote(request, sender, project) {
         } else if ((project.rating === 'topcraft.ru' || project.rating === 'topcraft.club' || project.rating === 'mctop.su' || (project.rating === 'minecraftrating.ru' && project.listing === 'projects')) && !project.priority && project.timeoutHour == null) {
             //Рандомизация по умолчанию (в пределах 5-10 минут) для бедного TopCraft/McTOP который легко ддосится от массового автоматического голосования
             project.time = project.time + Math.floor(Math.random() * (600000 - 300000) + 300000)
+        }
+
+        //Пауза ночная (глобальный настрой): если следующая попытка попадает в окно, сдвигаем её на конец окна
+        if (project.time && settings.nightPauseStart && settings.nightPauseEnd) {
+            project.time = shiftOutOfNightWindow(project.time, settings.nightPauseStart, settings.nightPauseEnd)
         }
 
         delete project.error

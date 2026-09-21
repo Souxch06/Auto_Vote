@@ -35,6 +35,7 @@ Many servers want you to vote on **several voting sites at once** (topcraft, mct
 2. Cycle flow: for each voting site in the list → the vote is performed → the extension **returns to your server page** → the verification (if configured) confirms the vote was really counted (60 s, otherwise the site is counted as failed) → **next voting site**. This repeats until every site of the list has been visited.
 3. **Nothing is missed:** a failed or unverified site is counted, the cycle continues with the remaining sites, and the whole cycle is automatically repeated on the next attempt — so failed sites are retried. The extension notifies you per site when a vote fails.
 4. The next cycle is scheduled after each round: every 24 hours by default, or your own custom timeout (expert mode), and on a shorter error cooldown when a cycle finished with failures.
+   - Expert settings: **random delay** per project (“Randomize”) and a global **night pause** window (e.g. 02:00-08:00) — any vote whose next attempt falls inside the window is delayed to its end, so nothing is scheduled overnight. The window may cross midnight (23:00-01:00).
 5. **CAPTCHA:** as everywhere in the extension — if a CAPTCHA appears on any voting site, the extension pauses and waits for you to solve it manually. CAPTCHAs are never solved automatically.
 
 # Supported sites
