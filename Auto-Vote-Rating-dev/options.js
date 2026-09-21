@@ -778,6 +778,10 @@ function resetEdit(project) {
     document.getElementById('voteMode').dispatchEvent(new Event('change'))
     document.getElementById('entryUrl').value = ''
     document.getElementById('entryButton').value = ''
+    document.getElementById('serverName').value = ''
+    document.getElementById('serverUrl').value = ''
+    document.getElementById('votingUrls').value = ''
+    document.getElementById('voteVerify').value = ''
     document.getElementById('rating').value = ''
     document.getElementById('rating').dispatchEvent(new Event('input'))
     document.querySelector('#addTab img').src = 'images/icons/addBtn.svg'
@@ -914,6 +918,13 @@ function editProject(project, switchToEdit) {
         document.getElementById('entryButton').value = project.entryButton
     }
 
+    if (project.rating === 'MultiSite') {
+        document.getElementById('serverName').value = project.name || ''
+        document.getElementById('serverUrl').value = project.serverUrl || ''
+        document.getElementById('votingUrls').value = (project.votingUrls || []).join('\n')
+        document.getElementById('voteVerify').value = project.voteVerify || ''
+    }
+
     if (project.rating === 'Custom') {
         document.getElementById('customBody').value = JSON.stringify(project.body, null, '\t')
         document.getElementById('responseURL').value = project.responseURL
@@ -934,6 +945,19 @@ function editProject(project, switchToEdit) {
         text += ' – ' + project.id
     }
     document.querySelector('.editSubtitle').textContent = text
+}
+
+//Нормализует пользовательский ввод URL: добавляет https:// если нет протокола
+//Возвращает null, если URL некорректен
+function normalizeUrlValue(value) {
+    value = (value || '').trim()
+    if (!value) return null
+    if (!/^https?:\/\//i.test(value)) value = 'https://' + value
+    try {
+        return new URL(value).href
+    } catch (error) {
+        return null
+    }
 }
 
 //Слушатель кнопки "Добавить"
@@ -1026,7 +1050,7 @@ document.getElementById('append').addEventListener('submit', async(event)=>{
         }
 
         const domain2 = getDomainWithoutSubdomain(funcRating.voteURL(project))
-        if (domain2 !== domain && domain !== 'Custom') {
+        if (domain2 !== domain && domain !== 'Custom' && domain !== 'MultiSite') {
             if (!allProjects[domain2]) {
                 if (!confirm(chrome.i18n.getMessage('notSupportedSiteRating', domain2))) {
                     event.submitter.disabled = false
@@ -1138,6 +1162,55 @@ document.getElementById('append').addEventListener('submit', async(event)=>{
         const entryButton = document.getElementById('entryButton').value.trim()
         if (entryUrl) project.entryUrl = entryUrl
         if (entryButton) project.entryButton = entryButton
+    }
+
+    if (project.rating === 'MultiSite') {
+        const serverName = document.getElementById('serverName').value.trim()
+        if (serverName) {
+            project.name = serverName
+        } else {
+            delete project.name
+        }
+        const serverUrl = normalizeUrlValue(document.getElementById('serverUrl').value)
+        const votingUrls = document.getElementById('votingUrls').value
+            .split('\n').map(s => s.trim()).filter(s => s)
+            .map(normalizeUrlValue)
+        if (!serverUrl) {
+            createNotif(chrome.i18n.getMessage('errorLink', 'serverUrl'), 'error')
+            event.submitter.disabled = false
+            return
+        }
+        if (!votingUrls.length || votingUrls.some(u => u == null)) {
+            createNotif(chrome.i18n.getMessage('errorLink', 'votingUrls'), 'error')
+            event.submitter.disabled = false
+            return
+        }
+        //Сайт голосования определяется по домену URL — предупреждаем про неподдерживаемые
+        const unsupported = []
+        for (const url of votingUrls) {
+            const domain = getDomainWithoutSubdomain(url)
+            if (!allProjects[domain]) unsupported.push(domain)
+        }
+        if (unsupported.length && !confirm(chrome.i18n.getMessage('notSupportedSiteRating', unsupported.join(', ')))) {
+            event.submitter.disabled = false
+            return
+        }
+        project.serverUrl = serverUrl
+        project.votingUrls = votingUrls
+        const voteVerify = document.getElementById('voteVerify').value.trim()
+        if (voteVerify) {
+            project.voteVerify = voteVerify
+        } else {
+            delete project.voteVerify
+        }
+        //Убираем поля, которые не используются в этом режиме
+        delete project.id
+        delete project.game
+        delete project.listing
+        delete project.lang
+        delete project.addition
+        delete project.entryUrl
+        delete project.entryButton
     }
 
     if (project.rating === 'Custom') {
@@ -1292,7 +1365,8 @@ async function addProject(project, element) {
 
     if (!await checkPermissions([project])) return
 
-    if (!(document.getElementById('disableCheckProjects').checked || project.rating === 'Custom')) {
+    //MultiSite: страница сервера не проверяется на существование, права запрашены для всех сайтов голосования
+    if (!(document.getElementById('disableCheckProjects').checked || project.rating === 'Custom' || project.rating === 'MultiSite')) {
         createNotif(chrome.i18n.getMessage('checkHasProject'), 'hint', {element})
 
         let response
@@ -2214,8 +2288,32 @@ function ratingChanged(event, reset) {
         if (!document.getElementById('customTimeOut').checked) document.getElementById('selectTime').parentElement.style.display = 'none'
         document.getElementById('customBody').parentElement.style.display = 'none'
         document.getElementById('responseURL').parentElement.style.display = 'none'
+        document.getElementById('serverName').parentElement.style.display = 'none'
+        document.getElementById('serverUrl').parentElement.style.display = 'none'
+        document.getElementById('votingUrls').parentElement.style.display = 'none'
+        document.getElementById('voteVerify').parentElement.style.display = 'none'
         laterChooseManual = false
         if (reset) return
+    }
+
+    if (this.value === 'MultiSite') {
+        //Цикл "мульти-голосование сервера": страница сервера (hub) + список URL сайтов голосования
+        laterChooseManual = true
+        document.getElementById('lastDayMonth').disabled = true
+        document.getElementById('lastDayMonth').checked = false
+        document.getElementById('voteMode').disabled = true
+        document.getElementById('voteMode').checked = false
+        document.getElementById('voteMode').dispatchEvent(new Event('change'))
+        //Страница входа не применяется к циклу (сайты голосования посещаются напрямую)
+        document.getElementById('entryUrl').parentElement.style.display = 'none'
+        document.getElementById('entryButton').parentElement.style.display = 'none'
+        document.getElementById('nick').parentElement.removeAttribute('style')
+        document.getElementById('nick').required = true
+        document.getElementById('serverName').parentElement.removeAttribute('style')
+        document.getElementById('serverUrl').parentElement.removeAttribute('style')
+        document.getElementById('votingUrls').parentElement.removeAttribute('style')
+        document.getElementById('voteVerify').parentElement.removeAttribute('style')
+        return
     }
 
     if (this.value === 'Custom') {
@@ -2246,6 +2344,10 @@ function ratingChanged(event, reset) {
 
     if (!funcRating) return
     laterChooseManual = true
+
+    //Страница входа доступна для обычных сайтов (скрывалась для MultiSite)
+    document.getElementById('entryUrl').parentElement.removeAttribute('style')
+    document.getElementById('entryButton').parentElement.removeAttribute('style')
 
     if (!funcRating.notRequiredId?.()) {
         document.getElementById('id').parentElement.removeAttribute('style')
@@ -2410,6 +2512,8 @@ function generateDataList() {
         if (rating === 'Custom') {
             option.disabled = !settings.enableCustom
             option.textContent = chrome.i18n.getMessage('Custom')
+        } else if (rating === 'MultiSite') {
+            option.textContent = chrome.i18n.getMessage('multiSite')
         }
         datalist.append(option)
     }

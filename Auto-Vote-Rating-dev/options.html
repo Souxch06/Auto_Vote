@@ -202,6 +202,38 @@
                             <label for="customBody" data-resource="bodyFetch"></label>
                             <textarea id="customBody" name="customBody" placeholder="bodyFetch" class="textarea" spellcheck="false"></textarea>
                         </div>
+                        <!--Название сервера (Multi-vote)-->
+                        <div style="display: none;" class="input-block">
+                            <label for="serverName" data-resource="serverName"></label>
+                            <input class="input" name="serverName" id="serverName" type="text" spellcheck="false">
+                        </div>
+                        <!--Страница сервера — hub цикла Multi-vote-->
+                        <div style="display: none;" class="input-block">
+                            <label for="serverUrl" data-resource="serverUrl">
+                                <span class="tooltip1">
+                                    <span class="tooltip1text" data-resource="serverUrlTooltip"></span>
+                                </span>
+                            </label>
+                            <input class="input" name="serverUrl" id="serverUrl" type="text" spellcheck="false">
+                        </div>
+                        <!--URL сайтов голосования (Multi-vote), по одному на строку-->
+                        <div style="display: none;" class="input-block">
+                            <label for="votingUrls" data-resource="votingUrls">
+                                <span class="tooltip1">
+                                    <span class="tooltip1text" data-resource="votingUrlsTooltip"></span>
+                                </span>
+                            </label>
+                            <textarea id="votingUrls" name="votingUrls" class="textarea" rows="5" spellcheck="false"></textarea>
+                        </div>
+                        <!--Проверка валидности голоса на странице сервера (Multi-vote, необязательно)-->
+                        <div style="display: none;" class="input-block">
+                            <label for="voteVerify" data-resource="voteVerify">
+                                <span class="tooltip1">
+                                    <span class="tooltip1text" data-resource="voteVerifyTooltip"></span>
+                                </span>
+                            </label>
+                            <input class="input" name="voteVerify" id="voteVerify" type="text" spellcheck="false">
+                        </div>
                         <!--Выбор режима голосования (тихий или эмуляция)-->
                         <div style="display: none;" class="input-block">
                             <label for="voteModeSelect" data-resource="enabledSilentVote">

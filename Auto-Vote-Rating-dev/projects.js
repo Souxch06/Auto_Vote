@@ -1628,6 +1628,21 @@ var allProjects = {
         parseURL: () => ({}),
         silentVote: () => true,
         notRequiredCaptcha: () => true
+    },
+    //Цикл "мульти-голосование сервера": страница сервера (hub) + список URL сайтов голосования.
+    //Не является реальным сайтом — цикл оркестрируется в background.js (handleMultiSitePage)
+    MultiSite: {
+        pageURL: (project) => project.serverUrl,
+        voteURL: (project) => project.serverUrl || 'https://multi.local/',
+        //Сохраняем пользовательское название сервера (проверка существования страницы не делается)
+        projectName: (doc, project) => project.name || '',
+        exampleURL: () => ['', '', ''],
+        parseURL: () => ({}),
+        notRequiredId: () => true,
+        //Права нужны и на домен страницы сервера, и на домены всех сайтов голосования
+        needAdditionalOrigins: (project) => (project.votingUrls || []).map(u => '*://*.' + getDomainWithoutSubdomain(u) + '/*'),
+        //Каждый сайт голосования из списка определяет свой таймаут; по умолчанию цикл раз в 24 часа
+        timeout: () => ({hours: 24})
     }
 }
 

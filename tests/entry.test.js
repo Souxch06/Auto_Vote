@@ -1,5 +1,6 @@
-// Test fonctionnel de scripts/main/entry.js — chaque instance tourne dans un
-// contexte vm isolé (comme un vrai content script : son propre chrome, son document)
+// Tests fonctionnels de scripts/main/entry.js, scripts/main/verify.js et des
+// helpers associés (finders.js, background.js, options.js) — chaque instance
+// tourne dans un contexte vm isolé (comme un vrai content script : son propre chrome, son document)
 'use strict'
 const fs = require('fs')
 const path = require('path')
@@ -20,6 +21,7 @@ class FakeElement extends Element {
         this.textContent = opts.text || ''
         this.value = opts.value
         this.attrs = opts.attrs || {}
+        if (!this.attrs.tag) this.attrs.tag = opts.tag || 'button'
         this.disabled = !!opts.disabled
         this.clicked = 0
         this.visible = opts.visible !== false
@@ -41,28 +43,39 @@ function matches(el, sel) {
     if (m = sel.match(/^([a-z-]+)\[src\*="(.+)"\]$/)) return el.attrs.tag === m[1] && (el.attrs.src || '').includes(m[2])
     if (m = sel.match(/^([a-z-]+)\[type="(.+)"\]$/)) return el.attrs.tag === m[1] && el.attrs.type === m[2]
     if (m = sel.match(/^\[role="(.+)"\]$/)) return el.attrs.role === m[1]
-    if (/^[a-z-]+$/.test(sel)) return el.attrs.tag === sel
+    if (/^[a-z0-9-]+$/.test(sel)) return el.attrs.tag === sel
     return false
+}
+
+const SELECTOR_CLICKABLE = 'a, button, input[type="button"], input[type="submit"], [role="button"]'
+const SELECTOR_ANY = 'a, button, input[type="button"], input[type="submit"], [role="button"], span, h1, h2, h3, h4, h5, h6, p, li, div'
+
+// Un élément correspond à une liste de sélecteurs séparés par des virgules si
+// il correspond à l'un d'eux
+function matchesList(el, sel) {
+    return sel.split(',').map(s => s.trim()).some(s => matches(el, s))
 }
 
 function makeDocument(opts) {
     return {
         location: {href: opts.href},
         _buttons: opts.buttons || [],
+        _verifyEls: opts.verifyEls || [],
         _captchas: opts.captchaEls || [],
         _title: opts.title || null,
         querySelector(sel) {
             if (sel === 'title') return this._title ? {textContent: this._title} : null
-            for (const el of [...this._buttons, ...this._captchas]) {
+            for (const el of [...this._buttons, ...this._verifyEls, ...this._captchas]) {
                 if (matches(el, sel)) return el
             }
             return null
         },
         querySelectorAll(sel) {
-            if (sel === 'a, button, input[type="button"], input[type="submit"], [role="button"]') {
-                return this._buttons
+            const all = [...this._buttons, ...this._verifyEls]
+            if (sel === SELECTOR_CLICKABLE || sel === SELECTOR_ANY) {
+                return all.filter(el => matchesList(el, sel))
             }
-            return this._buttons.filter(el => matches(el, sel))
+            return all.filter(el => matches(el, sel))
         }
     }
 }
@@ -70,8 +83,11 @@ function makeDocument(opts) {
 const fakeComputedStyle = () => ({display: 'block', visibility: 'visible', opacity: 1})
 
 // ---------- Temps simulé (partagé) ----------
+// Échelle de temps simulée : 1 ms simulée = 0,01 ms réelle (×100).
+// Les timers conservent leur ordre et leur durée relative réelle (un timer de
+// 60 s simulées tire au bout de 600 ms réelles, pas avant un timer de 500 ms)
 let now = 0
-const simSetTimeout = (fn, ms) => realSetTimeout(() => { now += (ms || 0); fn() }, Math.min(ms || 0, 5))
+const simSetTimeout = (fn, ms) => realSetTimeout(() => { now += (ms || 0); fn() }, (ms || 0) / 100)
 function tick(ms) { return new Promise(r => realSetTimeout(r, ms || 5)) }
 
 async function waitMsg(sent, pred, label, timeoutMs = 5000) {
@@ -104,8 +120,10 @@ function loadEntry(doc, sent) {
     sandbox.Date = {now: () => now}
     Object.defineProperty(sandbox, 'document', {get: () => docRef, configurable: true})
     vm.createContext(sandbox)
-    const file = path.join(ROOT, 'scripts/main/entry.js')
-    vm.runInContext(fs.readFileSync(file, 'utf8'), sandbox, {filename: file})
+    for (const f of ['scripts/main/finders.js', 'scripts/main/entry.js']) {
+        const file = path.join(ROOT, f)
+        vm.runInContext(fs.readFileSync(file, 'utf8'), sandbox, {filename: file})
+    }
     return {
         listeners,
         setDocument: d => { docRef = d }
@@ -114,6 +132,38 @@ function loadEntry(doc, sent) {
 
 function sendConfig(env, project) {
     simSetTimeout(() => { for (const l of env.listeners) l({sendEntry: true, project, settings: {}}) }, 1)
+}
+
+// ---------- Chargement de verify.js (avec finders.js) dans un contexte isolé ----------
+function loadVerify(doc, sent) {
+    let docRef = doc
+    const listeners = []
+    const sandbox = {
+        chrome: {
+            runtime: {
+                onMessage: {addListener: fn => listeners.push(fn)},
+                sendMessage: req => sent.push(req)
+            }
+        },
+        Element,
+        getComputedStyle: fakeComputedStyle,
+        URL,
+        setTimeout: simSetTimeout,
+        clearTimeout: () => {},
+        console
+    }
+    sandbox.Date = {now: () => now}
+    Object.defineProperty(sandbox, 'document', {get: () => docRef, configurable: true})
+    vm.createContext(sandbox)
+    for (const f of ['scripts/main/finders.js', 'scripts/main/verify.js']) {
+        const file = path.join(ROOT, f)
+        vm.runInContext(fs.readFileSync(file, 'utf8'), sandbox, {filename: file})
+    }
+    return {listeners}
+}
+
+function sendVerifyConfig(env, spec) {
+    simSetTimeout(() => { for (const l of env.listeners) l({sendVerify: true, verify: spec}) }, 1)
 }
 
 // ---------- Tests ----------
@@ -274,6 +324,94 @@ async function test(name, fn) {
         assert.strictEqual(isSameOriginPath('https://a.com/vote', 'https://a.com/other'), false)
         assert.strictEqual(isSameOriginPath('https://b.com/vote', 'https://a.com/vote'), false)
         assert.strictEqual(isSameOriginPath('not a url', 'https://a.com/vote'), false)
+    })
+
+    // ---------- verify.js (vérification du vote sur la page serveur) ----------
+    await test('verify : texte trouvé sur la page serveur → verifyPassed', async () => {
+        const sent = []
+        const ok = new FakeElement({tag: 'span', text: 'Vote enregistré'})
+        const doc = makeDocument({href: 'https://mysite.net/', verifyEls: [ok]})
+        const env = loadVerify(doc, sent)
+        sendVerifyConfig(env, 'Vote enregistré')
+        await waitMsg(sent, m => m.verifyPassed, 'verifyPassed jamais envoyé')
+        assert.ok(!sent.some(m => m.verifyFailed))
+    })
+
+    await test('verify : texte le plus court contenant la spec (pas de faux positif)', async () => {
+        const sent = []
+        const longText = new FakeElement({tag: 'div', text: 'Merci de voter sur les 5 sites partenaires du serveur'})
+        const shortText = new FakeElement({tag: 'h3', text: 'Vote'})
+        const doc = makeDocument({href: 'https://mysite.net/', verifyEls: [longText, shortText]})
+        const env = loadVerify(doc, sent)
+        sendVerifyConfig(env, 'Vote')
+        await waitMsg(sent, m => m.verifyPassed, 'verifyPassed jamais envoyé')
+    })
+
+    await test('verify : sélecteur CSS #vote-ok (élément sans texte)', async () => {
+        const sent = []
+        const ok = new FakeElement({tag: 'div', attrs: {id: 'vote-ok'}})
+        const doc = makeDocument({href: 'https://mysite.net/', verifyEls: [ok]})
+        const env = loadVerify(doc, sent)
+        sendVerifyConfig(env, '#vote-ok')
+        await waitMsg(sent, m => m.verifyPassed, 'verifyPassed jamais envoyé')
+    })
+
+    await test('verify : élément qui apparaît après quelques polls → verifyPassed', async () => {
+        const sent = []
+        const doc = makeDocument({href: 'https://mysite.net/', verifyEls: []})
+        const env = loadVerify(doc, sent)
+        sendVerifyConfig(env, 'Voté')
+        const ok = new FakeElement({tag: 'span', text: 'Voté'})
+        let ticks = 0
+        const poller = realSetInterval(() => {
+            ticks++
+            if (ticks === 3) doc._verifyEls.push(ok)
+        }, 5)
+        try {
+            await waitMsg(sent, m => m.verifyPassed, 'verifyPassed jamais envoyé')
+        } finally {
+            realClearInterval(poller)
+        }
+        assert.ok(!sent.some(m => m.verifyFailed))
+    })
+
+    await test('verify : élément jamais présent (60 s simulées) → verifyFailed', async () => {
+        const sent = []
+        const env = loadVerify(makeDocument({href: 'https://mysite.net/', verifyEls: []}), sent)
+        sendVerifyConfig(env, 'Voté')
+        await waitMsg(sent, m => m.verifyFailed, 'verifyFailed jamais envoyé', 15000)
+        assert.ok(!sent.some(m => m.verifyPassed))
+    })
+
+    await test('verify : élément invisible ignoré → verifyFailed', async () => {
+        const sent = []
+        const hidden = new FakeElement({tag: 'span', text: 'Voté', visible: false})
+        const env = loadVerify(makeDocument({href: 'https://mysite.net/', verifyEls: [hidden]}), sent)
+        sendVerifyConfig(env, 'Voté')
+        await waitMsg(sent, m => m.verifyFailed, 'verifyFailed jamais envoyé', 15000)
+    })
+
+    await test('verify : aucune config reçue → verifyPassed (défensif)', async () => {
+        const sent = []
+        loadVerify(makeDocument({href: 'https://mysite.net/'}), sent)
+        await waitMsg(sent, m => m.verifyPassed, 'verifyPassed (sans config) jamais envoyé', 15000)
+    })
+
+    // ---------- normalizeUrlValue (options.js, ajout Multi-vote) ----------
+    await test('normalizeUrlValue : ajout https://, validation, null si invalide', async () => {
+        const src = fs.readFileSync(path.join(ROOT, 'options.js'), 'utf8')
+        const start = src.indexOf('function normalizeUrlValue')
+        const end = src.indexOf('//Слушатель кнопки "Добавить"')
+        assert.ok(start >= 0 && end > start, 'function normalizeUrlValue introuvable')
+        const normalizeUrlValue = new Function(src.slice(start, end) + '\nreturn normalizeUrlValue')()
+
+        assert.strictEqual(normalizeUrlValue('topcraft.club'), 'https://topcraft.club/')
+        assert.strictEqual(normalizeUrlValue('mysite.net/vote?x=1'), 'https://mysite.net/vote?x=1')
+        assert.strictEqual(normalizeUrlValue('http://insecure.com/vote'), 'http://insecure.com/vote')
+        assert.strictEqual(normalizeUrlValue('  https://a.b/c  '), 'https://a.b/c')
+        assert.strictEqual(normalizeUrlValue(''), null)
+        assert.strictEqual(normalizeUrlValue(null), null)
+        assert.strictEqual(normalizeUrlValue('https://'), null)
     })
 
     // ---------- Rapport ----------

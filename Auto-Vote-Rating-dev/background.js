@@ -184,6 +184,10 @@ async function checkOpen(project, transaction) {
             if (!settings.timeoutVote) settings.timeoutVote = 900000
             retryCoolDown = settings.timeoutVote
         }
+        if (project.rating === 'MultiSite') {
+            //Цикл посещает N сайтов голосования (каждый — голосование + возможная проверка на странице сервера) — даём запас по времени
+            retryCoolDown = Math.max(retryCoolDown, ((project.votingUrls?.length || 0) + 1) * 300000)
+        }
         opened.nextAttempt = Date.now() + retryCoolDown
     }
 
@@ -294,16 +298,25 @@ async function newWindow(project, opened) {
         result = await promiseWindow
         if (result === false) return
 
-        let url = allProjects[project.rating].voteURL(project)
-        //Если у проекта задана страница входа (entryUrl), сначала открываем её;
-        //скрипт scripts/main/entry.js сам нажмёт кнопку (entryButton) и дождётся редиректа,
-        //после чего обычный скрипт голосования обработает страницу
-        if (project.entryUrl) {
-            const entryURL = getEntryURL(project)
-            if (entryURL) {
-                url = entryURL
-            } else {
-                console.warn(getProjectPrefix(project, true), 'Некорректный entryUrl, игнорируем:', project.entryUrl)
+        let url
+        if (project.rating === 'MultiSite') {
+            //Цикл "мульти-голосование": стартуем со страницы сервера (hub),
+            //затем по очереди посещаем каждый сайт голосования из списка,
+            //после каждого голосования возвращаемся на страницу сервера
+            url = project.serverUrl
+            opened.ms = {phase: 'hub', step: -1, failed: 0, lastOk: true}
+        } else {
+            url = allProjects[project.rating].voteURL(project)
+            //Если у проекта задана страница входа (entryUrl), сначала открываем её;
+            //скрипт scripts/main/entry.js сам нажмёт кнопку (entryButton) и дождётся редиректа,
+            //после чего обычный скрипт голосования обработает страницу
+            if (project.entryUrl) {
+                const entryURL = getEntryURL(project)
+                if (entryURL) {
+                    url = entryURL
+                } else {
+                    console.warn(getProjectPrefix(project, true), 'Некорректный entryUrl, игнорируем:', project.entryUrl)
+                }
             }
         }
 
@@ -620,8 +633,17 @@ const webNavigationOnCompletedListener = async function(details) {
         //     }
         // }
 
-        if (opened.countInject >= 10) {
+        //Для цикла Multi-vote лимит зависит от количества сайтов в списке
+        // (каждый сайт + возврат на страницу сервера — это отдельная загрузка)
+        const injectCap = project.rating === 'MultiSite' ? Math.max(10, (project.votingUrls?.length || 0) * 2 + 2) : 10
+        if (opened.countInject >= injectCap) {
             endVote({tooManyVoteAttempts: true}, {tab: {id: details.tabId}, url: details.url}, opened)
+            return
+        }
+
+        //Цикл "мульти-голосование сервера": hub-and-spoke
+        if (project.rating === 'MultiSite') {
+            await handleMultiSitePage(details, opened, project)
             return
         }
 
@@ -640,7 +662,7 @@ const webNavigationOnCompletedListener = async function(details) {
             }
             try {
                 if (settings.debug) console.log('Injecting scripts/main/entry.js to ' + details.url)
-                await chrome.scripting.executeScript({target: {tabId: details.tabId}, files: ['scripts/main/hacktimer.js', 'scripts/main/entry.js']})
+                await chrome.scripting.executeScript({target: {tabId: details.tabId}, files: ['scripts/main/hacktimer.js', 'scripts/main/finders.js', 'scripts/main/entry.js']})
                 await chrome.tabs.sendMessage(details.tabId, {sendEntry: true, project, settings})
                 if (openedProjects.has(details.tabId)) {
                     opened.entryPage = true
@@ -719,6 +741,124 @@ const webNavigationOnCompletedListener = async function(details) {
         } catch (error) {
             catchTabError(error, project)
         }
+    }
+}
+
+//Цикл "мульти-голосование сервера": hub-and-spoke.
+//opened.ms = {phase: 'hub'|'vote', step: индекс сайта, failed: кол-во ошибок, lastOk: прошлое голосование прошло}
+//
+//  hub (step=-1)  → переходим на 1-й сайт голосования
+//  vote (step=i)  → запускаем обычный скрипт голосования сайта из URL[i]
+//  результат      → возврат на страницу сервера
+//  hub (step>=0)  → проверка подтверждения (verify.js) → следующий сайт / конец цикла
+//
+//Один и тот же вкладка используется для всего цикла; failed>0 не останавливает цикл
+//("не пропускаем ничего"), в конце цикл завершится с ошибкой и повторится позже
+async function handleMultiSitePage(details, opened, project) {
+    const ms = opened.ms || (opened.ms = {phase: 'hub', step: -1, failed: 0, lastOk: true})
+    const tabId = details.tabId
+    const save = () => {
+        if (openedProjects.has(tabId)) db.put('other', openedProjects, 'openedProjects')
+    }
+
+    if (ms.phase === 'hub') {
+        if (ms.step < 0) {
+            //Начало цикла: сразу на первый сайт голосования
+            ms.step = 0
+            ms.phase = 'vote'
+            ms.lastOk = true
+            save()
+            chrome.tabs.update(tabId, {url: project.votingUrls[0]})
+            return
+        }
+        //Возврат после голосования: проверяем валидность на странице сервера (если задано и голосование прошло)
+        if (ms.lastOk && project.voteVerify) {
+            if (settings.debug) console.log('Injecting scripts/main/verify.js to ' + details.url)
+            try {
+                await chrome.scripting.executeScript({target: {tabId}, files: ['scripts/main/hacktimer.js', 'scripts/main/finders.js', 'scripts/main/verify.js']})
+                await chrome.tabs.sendMessage(tabId, {sendVerify: true, verify: project.voteVerify})
+            } catch (error) {
+                catchTabError(error, project)
+            }
+            return
+        }
+        //Проверка не задана (или голосование не прошло) — сразу следующий шаг
+        await multiSiteAdvance(tabId, opened, project)
+        return
+    }
+
+    //Фаза "vote": страница голосования сайта из project.votingUrls[ms.step].
+    //Сайт определяется по домену URL — запускается его обычный скрипт голосования
+    let domain
+    try {
+        domain = getDomainWithoutSubdomain(details.url)
+    } catch (error) {
+        domain = null
+    }
+    const site = domain ? allProjects[domain] : null
+    if (!site) {
+        //Сайт не поддерживается — шаг не состоялся, возвращаемся на страницу сервера
+        console.error(getProjectPrefix(project, true), 'Multi-vote: сайт не поддерживается, пропускаем:', details.url)
+        ms.failed++
+        ms.lastOk = false
+        ms.phase = 'hub'
+        save()
+        chrome.tabs.update(tabId, {url: project.serverUrl})
+        return
+    }
+
+    //Собираем "шаговый" проект: данные группы + данные, распарсенные из URL (id, listing, ...)
+    let parsed = {}
+    try {
+        parsed = site.parseURL?.(new URL(details.url)) || {}
+    } catch (error) {
+    }
+    const stepProject = Object.assign({}, project, parsed, {rating: domain, ratingMain: domain})
+
+    try {
+        if (settings.debug) console.log('Injecting scripts/' + domain + '.js to ' + details.url + ' (multi-vote step ' + (ms.step + 1) + '/' + project.votingUrls.length + ')')
+        if (site.needPrompt?.()) {
+            const funcPrompt = function (nick) {
+                window.prompt = new Proxy(window.prompt, {
+                    apply() {
+                        return nick
+                    }
+                })
+            }
+            await chrome.scripting.executeScript({target: {tabId}, world: 'MAIN', func: funcPrompt, args: [stepProject.nick]})
+        }
+        await chrome.scripting.executeScript({target: {tabId}, files: ['scripts/main/hacktimer.js', 'scripts/' + domain + '.js', 'scripts/main/api.js']})
+        if (site.needWorld?.()) {
+            await chrome.scripting.executeScript({target: {tabId}, world: 'MAIN', files: ['scripts/' + domain + '_world.js']})
+        }
+        await chrome.tabs.sendMessage(tabId, {sendProject: true, project: stepProject, settings})
+        if (openedProjects.has(tabId)) {
+            opened.countInject = (opened.countInject || 0) + 1
+            db.put('other', openedProjects, 'openedProjects')
+        }
+    } catch (error) {
+        catchTabError(error, project)
+    }
+}
+
+//Дальше по циклу: следующий сайт голосования либо завершение цикла (endVote с итоговым результатом)
+async function multiSiteAdvance(tabId, opened, project) {
+    const ms = opened.ms
+    const urls = project.votingUrls || []
+    if (ms.step >= urls.length - 1) {
+        //Конец цикла
+        const request = ms.failed > 0 ? {multiSiteFailed: ms.failed + '/' + urls.length} : {successfully: true}
+        await endVote(request, {tab: {id: tabId}}, opened)
+        return
+    }
+    ms.step++
+    ms.phase = 'vote'
+    ms.lastOk = true
+    db.put('other', openedProjects, 'openedProjects')
+    try {
+        await chrome.tabs.update(tabId, {url: urls[ms.step]})
+    } catch (error) {
+        catchTabError(error, project)
     }
 }
 
@@ -978,6 +1118,20 @@ async function onRuntimeMessage(request, sender, sendResponse) {
             catchTabError(error, project)
         }
         return
+    } else if (request.verifyPassed || request.verifyFailed) {
+        //Результат проверки подтверждения на странице сервера (цикл Multi-vote)
+        if (openedProjects.has(sender.tab.id)) {
+            const opened = openedProjects.get(sender.tab.id)
+            const project = await db.get('projects', opened.key)
+            if (project.rating === 'MultiSite' && opened.ms?.phase === 'hub') {
+                if (request.verifyFailed) {
+                    opened.ms.failed++
+                    db.put('other', openedProjects, 'openedProjects')
+                }
+                await multiSiteAdvance(sender.tab.id, opened, project)
+            }
+        }
+        return
     } else if (request === 'checkVote') {
         checkVote()
         return
@@ -1096,7 +1250,43 @@ async function onRuntimeMessage(request, sender, sendResponse) {
         }
         updateValue('projects', project)
     } else {
+        const project = await db.get('projects', opened.key)
+        //Цикл Multi-vote: результат шага НЕ завершает цикл — возвращаемся на страницу сервера,
+        //итог (успех/ошибка) будет посчитан в конце всего цикла
+        if (project.rating === 'MultiSite' && opened.ms?.phase === 'vote') {
+            const ok = !!(request.successfully || request.later != null)
+            if (!ok) {
+                opened.ms.failed++
+                let stepMessage
+                if (request.message) {
+                    stepMessage = chrome.i18n.getMessage('siteError', request.message)
+                } else {
+                    const name = Object.keys(request)[0]
+                    stepMessage = Object.values(request)[0] === true ? chrome.i18n.getMessage(name) : chrome.i18n.getMessage(name, Object.values(request)[0])
+                }
+                console.error(getProjectPrefix(project, true), 'Multi-vote: шаг не состоялся (' + detailsUrl(sender.url) + '):', stepMessage)
+                sendNotification(getProjectPrefix(project, false), stepMessage, 'warn', 'openTab_' + sender.tab.id)
+            }
+            opened.ms.lastOk = ok
+            opened.ms.phase = 'hub'
+            db.put('other', openedProjects, 'openedProjects')
+            try {
+                await chrome.tabs.update(sender.tab.id, {url: project.serverUrl})
+            } catch (error) {
+                endVote(request, sender, opened)
+            }
+            return
+        }
         endVote(request, sender, opened)
+    }
+}
+
+//Вспомогательная: домен из URL (без ошибок)
+function detailsUrl(url) {
+    try {
+        return getDomainWithoutSubdomain(url || '')
+    } catch (error) {
+        return url
     }
 }
 

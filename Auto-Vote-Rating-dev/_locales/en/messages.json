@@ -1148,5 +1148,32 @@
   },
   "entryNoConfig": {
     "message": "The entry page script did not receive its settings"
+  },
+  "multiSite": {
+    "message": "Multi-votes (server)"
+  },
+  "serverName": {
+    "message": "Server name (optional)"
+  },
+  "serverUrl": {
+    "message": "Server page URL (hub)"
+  },
+  "serverUrlTooltip": {
+    "message": "The page of your server where the votes are displayed. The extension opens it first, and after each vote it returns to this page (and, if verification is configured, checks that the vote was recorded) before moving to the next voting site."
+  },
+  "votingUrls": {
+    "message": "Voting sites URLs (one per line)"
+  },
+  "votingUrlsTooltip": {
+    "message": "A list of the voting site URLs for this server, one per line. Each URL is processed by its own built-in voting script. The sites are visited in the given order; sites that fail are retried on the next cycle."
+  },
+  "voteVerify": {
+    "message": "Vote verification on the server page (optional)"
+  },
+  "voteVerifyTooltip": {
+    "message": "A CSS selector or text to look for on the server page after each vote (for example a \"Vote again\" button that only appears once the vote has been recorded). If found, the vote is considered validated; if not found within 60 seconds, the vote is counted as failed and retried on the next cycle."
+  },
+  "multiSiteFailed": {
+    "message": "The cycle finished with $1 voting site(s) that could not be completed"
   }
 }

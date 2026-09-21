@@ -829,5 +829,32 @@
   },
   "entryNoConfig": {
     "message": "Das Einstiegsseiten-Skript hat keine Einstellungen erhalten"
+  },
+  "multiSite": {
+    "message": "Mehrere Votes (Server)"
+  },
+  "serverName": {
+    "message": "Servername (optional)"
+  },
+  "serverUrl": {
+    "message": "URL der Serverseite (Hub)"
+  },
+  "serverUrlTooltip": {
+    "message": "Die Seite deines Servers, auf der die Votes angezeigt werden. Die Erweiterung öffnet sie zuerst und kehrt nach jedem Vote zu dieser Seite zurück (und prüft bei konfigurierter Prüfung, ob der Vote erfasst wurde), bevor sie zur nächsten Vote-Seite wechselt."
+  },
+  "votingUrls": {
+    "message": "URLs der Vote-Seiten (eine pro Zeile)"
+  },
+  "votingUrlsTooltip": {
+    "message": "Eine Liste der URLs der Vote-Seiten für diesen Server, eine pro Zeile. Jede URL wird mit ihrem eigenen integrierten Vote-Skript verarbeitet. Die Seiten werden in der angegebenen Reihenfolge bevoteet; fehlgeschlagene Seiten werden im nächsten Zyklus wiederholt."
+  },
+  "voteVerify": {
+    "message": "Vote-Prüfung auf der Serverseite (optional)"
+  },
+  "voteVerifyTooltip": {
+    "message": "Ein CSS-Selektor oder Text, nach dem auf der Serverseite nach jedem Vote gesucht wird (z. B. eine Schaltfläche wie \"Nochmal voten\", die erst erscheint, wenn der Vote erfasst wurde). Wenn gefunden, gilt der Vote als bestätigt; wenn er nicht innerhalb von 60 Sekunden gefunden wird, zählt der Vote als fehlgeschlagen und wird im nächsten Zyklus wiederholt."
+  },
+  "multiSiteFailed": {
+    "message": "Der Zyklus wurde beendet, $1 Vote-Seite(n) konnten nicht abgeschlossen werden"
   }
 }
