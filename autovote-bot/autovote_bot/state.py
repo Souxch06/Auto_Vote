@@ -46,6 +46,10 @@ class State:
         raw = self.entry(site).get("last_vote")
         return datetime.fromisoformat(raw) if raw else None
 
+    def next_vote(self, site: str) -> Optional[datetime]:
+        raw = self.entry(site).get("next_vote")
+        return datetime.fromisoformat(raw) if raw else None
+
     def record_vote(self, site: str, now: datetime, result: str, error: str = "") -> None:
         e = self.entry(site)
         e["last_vote"] = now.isoformat(timespec="seconds")

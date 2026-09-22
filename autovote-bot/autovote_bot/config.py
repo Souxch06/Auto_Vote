@@ -70,7 +70,8 @@ class TimingConfig:
 class SolverConfig:
     base_url: str = "http://127.0.0.1:8877"
     auto_start: bool = True
-    headless: bool = False
+    headless: bool = True          # headless par défaut = moins de RAM/CPU par solve
+    keep_alive: bool = False       # false = le solveur s'arrête entre les votes (~300 Mo libérés)
     timeout_seconds: int = 180
     proxy: str = ""
     repo_root: str = ""   # répertoire racine du repo (contient server.py)
@@ -78,7 +79,8 @@ class SolverConfig:
     def from_dict(self, d: dict[str, Any]) -> "SolverConfig":
         self.base_url = str(d.get("baseUrl", d.get("base_url", self.base_url)))
         self.auto_start = bool(d.get("autoStart", d.get("auto_start", True)))
-        self.headless = bool(d.get("headless", False))
+        self.headless = bool(d.get("headless", True))
+        self.keep_alive = bool(d.get("keepAlive", d.get("keep_alive", False)))
         self.timeout_seconds = int(d.get("timeoutSeconds", 180) or 180)
         self.proxy = str(d.get("proxy") or "")
         self.repo_root = str(d.get("repoRoot", d.get("repo_root", "")))
@@ -153,6 +155,7 @@ class Config:
                 "baseUrl": self.solver.base_url,
                 "autoStart": self.solver.auto_start,
                 "headless": self.solver.headless,
+                "keepAlive": self.solver.keep_alive,
                 "timeoutSeconds": self.solver.timeout_seconds,
                 **({"proxy": self.solver.proxy} if self.solver.proxy else {}),
                 **({"repoRoot": self.solver.repo_root} if self.solver.repo_root else {}),

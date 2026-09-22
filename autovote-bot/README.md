@@ -84,19 +84,45 @@ Ou via `./run.sh` (voir plus bas).
   "timing": {
     "jitterMinutes": [5, 20],     // délai aléatoire ajouté à chaque vote
     "nightPause": ["02:00", "08:00"],   // [] = pas de pause nocturne
-    "pollSeconds": 60,            // fréquence de vérification des échéances
     "gapBetweenSitesSeconds": 45  // respiration entre deux sites
   },
   "solver": {
-    "baseUrl": "http://127.0.0.1:8877",  // le sidecar captcha-solver
+    "baseUrl": "http://127.0.0.1:8877",  // le sidecar captcha-solver (localhost)
     "autoStart": true,        // le bot le démarre s'il est éteint
-    "headless": false,        // true = sans écran (serveur)
+    "headless": true,         // sans écran = moins de RAM/CPU par solve
+    "keepAlive": false,       // le solveur s'arrête entre les votes (~300 Mo libérés)
     "timeoutSeconds": 180
     // "proxy": "http://user:pass@host:port"   // proxy résidentiel (recommandé)
   },
   "logFile": "bot.log"
 }
 ```
+
+## Emprise ressources (optimisée au minimum)
+
+Le bot est conçu pour dormir : **entre deux votes il ne fait rien** (il s'endort
+jusqu'à la prochaine échéance, CPU ≈ 0 %, aucun polling).
+
+| État | RAM | CPU |
+|---|---|---|
+| Bot au repos (entre les votes) | **~20 Mo** (Python stdlib) | ~0 % |
+| Solveur arrêté (`keepAlive: false`, entre les votes) | **0** | 0 |
+| Pendant un vote (1 CAPTCHA en cours) | +1 à 1,5 Go (1 navigateur headless, temporaire) | 1 cœur à ~50-100 % |
+| Solveur au repos s'il reste allumé (`keepAlive: true`) | +200-400 Mo | ~0 % |
+
+Choix d'optimisation actifs :
+- **Dormance jusqu'au prochain vote** (pas de réveil inutile, cap 30 min) ;
+- **Solveur démarré à la demande** uniquement (premier vote CAPTCHA) ;
+- **Solveur arrêté automatiquement** quand le prochain vote est à plus de 5 min
+  (`keepAlive: false`) — relancé tout seul au besoin ;
+- **Mode headless par défaut** (rendu non nécessaire) ;
+- **Échec = réessai dans 45 min** (le cooldown du site n'a pas démarré), pas de
+  boucle folle ni d'attente inutile de 24 h ;
+- Le sidecar n'expose **aucun port réseau** (127.0.0.1 uniquement).
+
+→ sur une machine de 4 Go, la machine reste à ~1 Go libre la quasi-totalité du
+temps ; le pic (1,5 Go) dure la durée d'un solve (30 s à 3 min), une poignée de
+fois par jour.
 
 ## Comment un vote se passe
 

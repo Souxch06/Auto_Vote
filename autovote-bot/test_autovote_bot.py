@@ -126,6 +126,29 @@ class TestScheduler(unittest.TestCase):
         self.assertEqual(p.next_vote, self.now.replace(hour=8, minute=0) + timedelta(days=1))
 
 
+class TestNextWakeup(unittest.TestCase):
+    def test_tous_futurs(self):
+        now = datetime(2026, 9, 21, 12, 0)
+        nxt = Scheduler.next_wakeup(
+            {"a": now + timedelta(hours=3), "b": now + timedelta(hours=1.5)}, now)
+        self.assertEqual(nxt, now + timedelta(hours=1.5))
+
+    def test_jamais_vote(self):
+        now = datetime(2026, 9, 21, 12, 0)
+        # un site jamais voté (None) -> réveil immédiat
+        self.assertEqual(Scheduler.next_wakeup({"a": now + timedelta(hours=3), "b": None}, now), now)
+
+    def test_echeance_passee(self):
+        now = datetime(2026, 9, 21, 12, 0)
+        # toutes les échéances sont passées -> réveil immédiat
+        nxt = Scheduler.next_wakeup({"a": now - timedelta(minutes=5)}, now)
+        self.assertEqual(nxt, now)
+
+    def test_vide(self):
+        now = datetime(2026, 9, 21, 12, 0)
+        self.assertEqual(Scheduler.next_wakeup({}, now), now)
+
+
 class TestSites(unittest.TestCase):
     def test_profiles_connus(self):
         self.assertEqual(profile_for("https://serveur-prive.net/x/vote").captcha, "hcaptcha")
@@ -196,6 +219,15 @@ class TestState(unittest.TestCase):
 
 
 class TestConfig(unittest.TestCase):
+    def test_solver_defaults_perf(self):
+        from autovote_bot.config import SolverConfig
+        s = SolverConfig().from_dict({})
+        self.assertTrue(s.headless)      # headless par défaut = moins de RAM
+        self.assertFalse(s.keep_alive)   # solveur arrêté entre les votes
+        s2 = SolverConfig().from_dict({"headless": False, "keepAlive": True})
+        self.assertFalse(s2.headless)
+        self.assertTrue(s2.keep_alive)
+
     def test_validate_ok(self):
         cfg = Config()
         cfg.server.hub_url = "https://skyofskill.fr/vote"

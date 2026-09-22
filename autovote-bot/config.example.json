@@ -22,13 +22,13 @@
   "timing": {
     "jitterMinutes": [5, 20],
     "nightPause": ["02:00", "08:00"],
-    "pollSeconds": 60,
     "gapBetweenSitesSeconds": 45
   },
   "solver": {
     "baseUrl": "http://127.0.0.1:8877",
     "autoStart": true,
-    "headless": false,
+    "headless": true,
+    "keepAlive": false,
     "timeoutSeconds": 180
   },
   "logFile": "bot.log"

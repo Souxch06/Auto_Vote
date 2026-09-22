@@ -140,3 +140,15 @@ class Scheduler:
             jitter=jitter,
             night_shifted=candidate != original,
         )
+
+    @staticmethod
+    def next_wakeup(next_votes: dict[str, Optional[datetime]], now: datetime) -> datetime:
+        """Heure de réveil du bot : la plus proche des échéances persistées.
+
+        `next_votes` = {site: prochaine échéance (None = jamais voté -> dû maintenant)}.
+        Retourne `now` si un site est déjà dû (ou inconnu), sinon le min des échéances.
+        """
+        if not next_votes or any(t is None for t in next_votes.values()):
+            return now
+        nxt = min(t for t in next_votes.values())
+        return nxt if nxt > now else now

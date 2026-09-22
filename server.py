@@ -653,4 +653,7 @@ async def solver_status():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8877"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Par défaut localhost uniquement (le bot le consomme en local, sans auth).
+    # HOST=0.0.0.0 + token pour l'exposer sur le réseau si besoin.
+    host = os.getenv("HOST", "127.0.0.1")
+    uvicorn.run(app, host=host, port=port)

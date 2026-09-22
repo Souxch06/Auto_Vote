@@ -12,14 +12,14 @@ import logging
 import signal
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import __version__
 from .config import Config, ConfigError, load_config, save_config
 from .detect import DetectionResult, detect_voting_sites
 from .htmlutil import domain_without_subdomain
-from .scheduler import NightWindow, Scheduler
+from .scheduler import NightWindow, Scheduler, shift_out_of_night_window
 from .sites import SITE_PROFILES
 from .state import State
 from .solver_client import SolverClient
@@ -114,9 +114,19 @@ def cmd_status(cfg: Config) -> int:
     return 0
 
 
+def _sleep(seconds: float, stop: dict) -> None:
+    """Sleep réveillable par SIGINT/SIGTERM (par tranches de 5 s)."""
+    seconds = max(0.0, seconds)
+    while seconds > 0 and not stop["flag"]:
+        step = min(5.0, seconds)
+        time.sleep(step)
+        seconds -= step
+
+
 def cmd_run(cfg: Config, once: bool) -> int:
     state = State(cfg.state_file)
     sched = build_scheduler(cfg)
+    # Le solveur est démarré à la demande (premier vote CAPTCHA) — 0 Go au repos
     solver = SolverClient(
         base_url=cfg.solver.base_url,
         auto_start=cfg.solver.auto_start,
@@ -134,14 +144,9 @@ def cmd_run(cfg: Config, once: bool) -> int:
     signal.signal(signal.SIGINT, _sig)
     signal.signal(signal.SIGTERM, _sig)
 
-    log.info("bot démarré (v%s) — %d site(s) — nuit %s→%s", __version__, len(cfg.sites),
-             cfg.timing.night_start or "—", cfg.timing.night_end or "—")
-    if not once:
-        log.info("solveur: %s (auto_start=%s)", cfg.solver.base_url, cfg.solver.auto_start)
-        try:
-            solver.ensure_running()
-        except Exception as e:  # noqa: BLE001
-            log.warning("solveur pas prêt pour l'instant: %s (il sera relancé au 1er vote CAPTCHA)", e)
+    log.info("bot démarré (v%s) — %d site(s) — nuit %s→%s — solveur à la demande (%s)",
+             __version__, len(cfg.sites), cfg.timing.night_start or "—",
+             cfg.timing.night_end or "—", cfg.solver.base_url)
 
     try:
         while not stop["flag"]:
@@ -153,7 +158,7 @@ def cmd_run(cfg: Config, once: bool) -> int:
                 p = sched.plan(s.url, state.last_vote(s.url), now)
                 if not p.due:
                     continue
-                log.info("vote dû: %s (prochain à %s)", s.url, p.next_vote.strftime("%H:%M:%S"))
+                log.info("vote dû: %s", s.url)
                 res = voter.vote(s)
                 if res.solved:
                     label = "verified" if res.verified else "solved"
@@ -163,16 +168,33 @@ def cmd_run(cfg: Config, once: bool) -> int:
                 else:
                     state.record_vote(s.url, datetime.now(), "error", res.error)
                     log.error("✘ %s — %s", s.url, res.error)
-                # Réajuste l'heure suivante (cooldown + jitter + nuit)
-                nxt = sched.next_vote_time(s.url, datetime.now(), datetime.now())
+                if res.solved:
+                    # Vote soumis : cooldown complet + jitter + nuit
+                    nxt = sched.next_vote_time(s.url, datetime.now(), datetime.now())
+                else:
+                    # Échec : le cooldown du site n'a pas démarré -> réessayer bientôt (45 min)
+                    nxt = datetime.now() + timedelta(minutes=45)
+                    nxt = shift_out_of_night_window(nxt, sched.night)
                 state.set_next(s.url, nxt)
                 state.save()
                 acted = True
-                time.sleep(cfg.timing.gap_between_sites_seconds)
+                _sleep(cfg.timing.gap_between_sites_seconds, stop)
             if once:
                 break
-            if not acted:
-                time.sleep(max(5, cfg.timing.poll_seconds))
+
+            # Repos : on dort jusqu'au prochain vote dû (CPU ≈ 0, aucun polling)
+            next_votes = {s.url: state.next_vote(s.url) for s in cfg.sites}
+            # Jamais voté (premier run) -> réveil immédiat
+            wakeup = sched.next_wakeup(next_votes, datetime.now())
+            wait_s = (wakeup - datetime.now()).total_seconds()
+            wait_s = min(max(15.0, wait_s), 1800.0)  # cap 30 min : ré-évalue l'état
+            if acted and not cfg.solver.keep_alive and wait_s > 300:
+                # Le prochain vote est loin : libère le solveur (~200-400 Mo de RAM)
+                log.info("solveur: arrêt entre les votes (prochain à %s)",
+                         wakeup.strftime("%Y-%m-%d %H:%M:%S"))
+                solver.stop()
+            log.info("dormance: réveil à %s", wakeup.strftime("%Y-%m-%d %H:%M:%S"))
+            _sleep(wait_s, stop)
     finally:
         state.save()
         solver.stop()
