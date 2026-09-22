@@ -9,19 +9,43 @@ import json
 import logging
 import os
 import re
+from typing import Optional
 
 log = logging.getLogger(__name__)
 
-# Parameterized fetch: caller values (url, method, body) arrive as evaluate() args,
-# NEVER interpolated into JS source — safe against quotes/injection.
+# Parameterized fetch: caller values (url, method, body, content type) arrive as
+# evaluate() args, NEVER interpolated into JS source — safe against quotes/injection.
+# GET/HEAD get NO body (a fetch() GET with a body throws in browsers).
 _FETCH_JS = (
-    "async ({u, m, b}) => { try {"
-    " const r = await fetch(u, {method: m,"
-    " headers: {'Content-Type': 'application/json'},"
-    " body: b, credentials: 'include'});"
+    "async ({u, m, b, ct}) => { try {"
+    " const opts = {method: m, credentials: 'include'};"
+    " if (b && m !== 'GET' && m !== 'HEAD') {"
+    "   opts.body = b;"
+    "   opts.headers = {'Content-Type': ct || 'application/json'};"
+    " }"
+    " const r = await fetch(u, opts);"
     " return {status: r.status, body: await r.text()};"
     " } catch(e) { return {status: 0, body: String(e)}; } }"
 )
+
+
+def build_fetch_body(pf: dict, token: str) -> tuple:
+    """(body, content-type) pour une entrée post_fetch.
+
+    - GET/HEAD -> (None, "")
+    - contentType "form" -> application/x-www-form-urlencoded (re-submit de formulaire)
+    - défaut -> application/json
+    `__TOKEN__` dans une valeur de body est remplacé par le token résolu.
+    """
+    method = (pf.get("method") or "POST").upper()
+    if method in ("GET", "HEAD"):
+        return None, ""
+    body = pf.get("body") or {}
+    ct = (pf.get("contentType") or "").lower()
+    if ct in ("form", "application/x-www-form-urlencoded"):
+        from urllib.parse import urlencode
+        return urlencode(body).replace("__TOKEN__", token), "application/x-www-form-urlencoded"
+    return json.dumps(body).replace("__TOKEN__", token), "application/json"
 
 
 async def resolve_selector(page, selector: str, timeout: int = 10000):
@@ -79,6 +103,39 @@ async def run_pre_actions(page, actions: list):
         await asyncio.sleep(0.5)
 
 
+# Args Chromium pour alléger chaque instance (mémoire + CPU + réseau).
+# --js-flags: plafonne le tas JS (~384 Mo) — les pages de vote sont légères.
+# --disable-*: coupe le networking/les composants en arrière-plan inutiles.
+# --disable-dev-shm-usage: évite l'épuisement de /dev/shm (64 Mo par défaut
+# sous Docker) qui fait planter Chromium sur les petites VM.
+_PERF_ARGS = [
+    "--js-flags=--max-old-space-size=384",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-extensions",
+    "--disable-sync",
+    "--disable-translate",
+    "--mute-audio",
+    "--no-first-run",
+    "--disable-dev-shm-usage",
+]
+_args_supported: Optional[bool] = None
+
+
+def _launch_supports_args() -> bool:
+    """Vrai si cloakbrowser.launch_async accepte `args` (vérifié une fois)."""
+    global _args_supported
+    if _args_supported is None:
+        try:
+            import inspect
+            import cloakbrowser
+            _args_supported = "args" in inspect.signature(cloakbrowser.launch_async).parameters
+        except Exception:  # noqa: BLE001
+            _args_supported = False
+    return _args_supported
+
+
 def browser_kwargs(prefix: str, proxy: str = None) -> dict:
     """Browser-trust levers shared by all browser solvers.
 
@@ -97,6 +154,8 @@ def browser_kwargs(prefix: str, proxy: str = None) -> dict:
         kw["proxy"] = proxy
     if os.getenv(f"{prefix}_GEOIP") == "1":
         kw["geoip"] = True
+    if _launch_supports_args():
+        kw["args"] = _PERF_ARGS
     return kw
 
 
@@ -116,25 +175,26 @@ def route_glob(url: str) -> str:
     return url                            # has a path → exact match already works
 
 
-async def fetch_from_page(page, url: str, method: str, body: str) -> dict:
+async def fetch_from_page(page, url: str, method: str, body: str, content_type: str = "") -> dict:
     """One parameterized fetch from the page's session. Returns {status, body}."""
-    return await page.evaluate(_FETCH_JS, {"u": url, "m": method.upper(), "b": body})
+    return await page.evaluate(
+        _FETCH_JS, {"u": url, "m": method.upper(), "b": body, "ct": content_type})
 
 
 async def run_post_fetch(page, post_fetch: list, token: str) -> list:
     """Run post_fetch API calls from the SAME browser session (keeps cookies/origin).
 
-    Each entry: {"url": ..., "method": "POST", "body": {...}}. `__TOKEN__` in the
-    JSON body is replaced with the solved token. All values are passed as evaluate()
-    args (never interpolated into JS source).
+    Each entry: {"url": ..., "method": "POST", "body": {...}, "contentType": "json|form"}.
+    `__TOKEN__` in the body is replaced with the solved token. All values are passed
+    as evaluate() args (never interpolated into JS source).
     """
     results = []
     for pf in post_fetch:
         pf_url = pf["url"]
         pf_method = pf.get("method", "POST")
-        body_str = json.dumps(pf.get("body", {})).replace("__TOKEN__", token)
+        body_str, content_type = build_fetch_body(pf, token)
         try:
-            fr = await fetch_from_page(page, pf_url, pf_method, body_str)
+            fr = await fetch_from_page(page, pf_url, pf_method, body_str, content_type)
             log.info("post_fetch %s: %d", pf_url, fr["status"])
             results.append({"url": pf_url, **fr})
         except Exception as e:

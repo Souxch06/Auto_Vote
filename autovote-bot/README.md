@@ -116,8 +116,13 @@ Choix d'optimisation actifs :
 - **Solveur arrêté automatiquement** quand le prochain vote est à plus de 5 min
   (`keepAlive: false`) — relancé tout seul au besoin ;
 - **Mode headless par défaut** (rendu non nécessaire) ;
+- **Chromium allégé par solve** : tas JS plafonné (~384 Mo), networking/composants
+  en arrière-plan coupés, `--disable-dev-shm-usage` (stabilité sur les petites VM) ;
+- **Zéro aller-retour réseau de vérification** : le résultat du vote est lu dans
+  la session même du solveur (re-submit + réponse) ;
 - **Échec = réessai dans 45 min** (le cooldown du site n'a pas démarré), pas de
   boucle folle ni d'attente inutile de 24 h ;
+- **Rotation du log** (5 Mo max, 1 génération) — le disque ne se remplit pas ;
 - Le sidecar n'expose **aucun port réseau** (127.0.0.1 uniquement).
 
 → sur une machine de 4 Go, la machine reste à ~1 Go libre la quasi-totalité du
@@ -127,14 +132,19 @@ fois par jour.
 ## Comment un vote se passe
 
 1. Le bot lit la page de vote → repère le **type de CAPTCHA** (hCaptcha,
-   reCAPTCHA…), sa **sitekey** et le **champ pseudo**.
+   reCAPTCHA…), sa **sitekey**, le **champ pseudo** et le **formulaire**
+   (action + champs cachés/CSRF).
 2. Il demande au **sidecar** de résoudre le CAPTCHA **sur la page réelle**
-   (mode `real_page`) : le sidecar remplit le pseudo, clique, résout le
-   CAPTCHA et soumet — **depuis la même session et la même IP**, donc le
-   token est valide.
-3. Le bot **vérifie** : marqueur sur ta page serveur (`voteVerify`) ou marqueur
-   « déjà voté » sur le site.
-4. Il recalcule l'échéance : `maintenant + cooldown + jitter`, repoussé hors
+   (mode `real_page`) : le sidecar remplit le pseudo et résout le CAPTCHA.
+3. Le sidecar **re-soumet alors le formulaire AVEC le token résolu**, depuis
+   la même session, la même IP et les mêmes cookies (`post_fetch` en
+   `contentType: "form"`) — le vote part donc bien même si un défi s'est
+   affiché avant le clic.
+4. La **réponse du re-submit** (lue dans la session du vote) est analysée :
+   marqueur de succès ou « déjà voté » → vote confirmé, **sans aucun aller
+   retour réseau supplémentaire**. À défaut : vérification classique sur la
+   page serveur (`voteVerify`) ou la page du site.
+5. Il recalcule l'échéance : `maintenant + cooldown + jitter`, repoussé hors
    de la pause nocturne. L'état est persisté dans `state.json`.
 
 Le site est **inconnu** du registre ? Le bot construit un profil générique à

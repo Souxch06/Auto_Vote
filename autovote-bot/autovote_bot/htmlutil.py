@@ -146,3 +146,84 @@ def match_marker(html: str, spec: str) -> bool:
         cls = re.escape(spec[1:])
         return re.search(rf'class=["\'][^"\']*\b{cls}\b', html, re.I) is not None
     return spec.lower() in html.lower()
+
+
+def marker_found(html: str, markers: list[str]) -> bool:
+    """True si au moins un marqueur (texte, #id ou .classe) est présent."""
+    return any(match_marker(html, m) for m in markers if m)
+
+
+# Champ qui reçoit le token résolu (hCaptcha / reCAPTCHA / Turnstile)
+_CAPTCHA_FIELD_RX = re.compile(
+    r"h-captcha-response|g-recaptcha-response|cf-turnstile-response|captcha-response|captcha", re.I)
+_WIDGET_CLASSES = ("h-captcha", "hcaptcha", "g-recaptcha", "recaptcha", "cf-turnstile", "turnstile")
+
+
+class _FormParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.forms: list[dict] = []
+        self._stack: list[dict] = []
+
+    def handle_starttag(self, tag, attrs):
+        d = dict(attrs)
+        if tag == "form":
+            self.forms.append({
+                "action": d.get("action") or "",
+                "method": (d.get("method") or "POST").upper(),
+                "fields": {}, "nick_field": "", "captcha_field": "", "has_widget": False,
+            })
+            self._stack.append(self.forms[-1])
+            return
+        if not self._stack:
+            return
+        f = self._stack[-1]
+        if tag == "div":
+            cls = (d.get("class") or "").lower()
+            if any(w in cls for w in _WIDGET_CLASSES):
+                f["has_widget"] = True
+        elif tag in ("input", "textarea", "select"):
+            itype = (d.get("type") or "text").lower()
+            if itype in ("submit", "button", "image", "file", "checkbox", "radio"):
+                return
+            name = d.get("name") or ""
+            if not name:
+                return
+            f["fields"][name] = d.get("value") or ""
+            low = name.lower()
+            if not f["captcha_field"] and _CAPTCHA_FIELD_RX.search(low):
+                f["captcha_field"] = name
+            elif not f["nick_field"] and any(h in low for h in NICK_HINTS):
+                f["nick_field"] = name
+
+    def handle_endtag(self, tag):
+        if tag == "form" and self._stack:
+            self._stack.pop()
+
+
+def parse_vote_form(html: str, base_url: str) -> dict | None:
+    """Le formulaire de vote de la page (celui qui porte le widget CAPTCHA ou
+    le champ pseudo). Retourne {action, method, fields, nick_field,
+    captcha_field} ou None.
+    """
+    p = _FormParser()
+    try:
+        p.feed(html or "")
+    except Exception:
+        return None
+    if not p.forms:
+        return None
+    chosen = None
+    for f in p.forms:  # priorité : widget CAPTCHA ou champ pseudo
+        if f["has_widget"] or f["nick_field"]:
+            chosen = f
+            break
+    if chosen is None:
+        for f in p.forms:
+            if f["captcha_field"]:
+                chosen = f
+                break
+    if chosen is None:
+        return None
+    chosen["action"] = urljoin(base_url, chosen["action"]) if chosen["action"] else base_url
+    return chosen

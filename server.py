@@ -168,8 +168,12 @@ class PostFetch(BaseModel):
                      examples=["https://target.com/api/verify"])
     method: Optional[str] = Field("POST", examples=["POST"])
     body: Optional[dict] = Field(
-        None, description="JSON body. Use the literal __TOKEN__ anywhere to inject the "
+        None, description="Body. Use the literal __TOKEN__ anywhere to inject the "
         "solved token.", examples=[{"token": "__TOKEN__"}])
+    contentType: Optional[str] = Field(
+        None, description="'json' (default) or 'form' (application/x-www-form-urlencoded, "
+        "for re-submitting the page's own form after solving the captcha). "
+        "GET/HEAD ignore the body.")
 
 
 class SolveRequest(BaseModel):

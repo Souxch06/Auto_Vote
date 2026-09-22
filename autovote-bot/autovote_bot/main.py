@@ -28,10 +28,24 @@ from .voter import Voter
 log = logging.getLogger("autovote")
 
 
+def _rotate_log(log_file: str, max_bytes: int = 5 * 1024 * 1024) -> None:
+    """Rotation simple par taille : bot.log > 5 Mo -> bot.log.1 (l'ancien écrasé)."""
+    p = Path(log_file)
+    try:
+        if p.exists() and p.stat().st_size > max_bytes:
+            p1 = p.with_suffix(p.suffix + ".1")
+            if p1.exists():
+                p1.unlink()
+            p.rename(p1)
+    except OSError:
+        pass
+
+
 def setup_logging(log_file: str = "", verbose: bool = False) -> None:
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
     if log_file:
         Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+        _rotate_log(log_file)
         handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,

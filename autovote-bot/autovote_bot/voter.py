@@ -22,7 +22,7 @@ from .config import Config, SiteConfig
 from .detect import fetch_page
 from .htmlutil import (detect_captcha, domain_without_subdomain,
                        extract_sitekey, find_nick_input, find_submit_input,
-                       match_marker)
+                       match_marker, marker_found, parse_vote_form)
 from .sites import SITE_PROFILES, SiteProfile, generic_profile
 from .solver_client import SolverClient, SolverError
 
@@ -85,29 +85,64 @@ class Voter:
             return result
 
         if captcha:
-            self._vote_via_solver(site, profile, captcha, sitekey, nick_selector, submit_selector, result)
+            self._vote_via_solver(site, profile, captcha, sitekey, nick_selector,
+                                  submit_selector, html, result)
         else:
             self._vote_direct(site, profile, nick_selector, submit_selector, result)
 
-        if result.solved:
+        if result.solved and result.verified is None:
+            # Non encore vérifié dans la session du vote -> vérification classique
+            # (page serveur / page du site)
             result.verified = self._verify(site, profile)
         return result
 
-    def _vote_via_solver(self, site, profile, captcha, sitekey, nick_selector, submit_selector, result) -> None:
+    def _vote_via_solver(self, site, profile, captcha, sitekey, nick_selector,
+                         submit_selector, html, result) -> None:
         if not sitekey:
             result.error = f"sitekey {captcha} introuvable sur la page (précise-la dans la config)"
             return
+
+        # Si on connaît le formulaire de vote, le CAPTCHA est résolu par le solveur
+        # puis le formulaire est RE-SOUMIS avec le token depuis la même session
+        # (le clic « avant » le CAPTCHA du real_page ne suffit pas quand un défi
+        # s'affiche : c'est exactement ce que l'extension faisait en re-cliquant
+        # après captchaPassed).
+        form = parse_vote_form(html, site.url) if html else None
+        use_form = bool(form and form.get("captcha_field"))
+
+        if use_form:
+            pre_actions = [dict(a) for a in profile.pre_actions]
+            if nick_selector:
+                pre_actions.append({"type": "fill", "selector": nick_selector,
+                                    "value": "__NICK__", "timeout": 15000})
+            pre_actions.append({"type": "wait", "value": 2})
+            body = dict(form.get("fields") or {})
+            if form.get("nick_field"):
+                body[form["nick_field"]] = "__NICK__"
+            body[form["captcha_field"]] = "__TOKEN__"
+            post_fetch = [{"url": form["action"], "method": form.get("method") or "POST",
+                           "body": body, "contentType": "form"}]
+            result.details["form_submit"] = form["action"]
+        else:
+            pre_actions = profile.vote_actions(nick_selector, submit_selector)
+            # Vérification par re-lecture de la page depuis la session du vote
+            post_fetch = [{"url": site.url, "method": "GET"}]
+
         payload = {
             "type": captcha,
             "url": site.url,
             "sitekey": sitekey,
             "real_page": True,
-            "pre_actions": profile.vote_actions(nick_selector, submit_selector),
+            "pre_actions": pre_actions,
+            "post_fetch": post_fetch,
             "timeout_s": self.cfg.solver.timeout_seconds,
         }
         for a in payload["pre_actions"]:
             if a.get("value") == "__NICK__":
                 a["value"] = self.cfg.server.nick
+        for k, v in list(payload["post_fetch"][0].get("body") or {}).items():
+            if isinstance(v, str) and "__NICK__" in v:
+                payload["post_fetch"][0]["body"][k] = v.replace("__NICK__", self.cfg.server.nick)
         if captcha == "recaptcha":
             payload["version"] = profile.recaptcha_version or "v2"
             payload["classifier"] = "hybrid"
@@ -120,6 +155,15 @@ class Voter:
             result.solved = True
             result.method = f"solveur/{data.get('method') or captcha} ({data.get('elapsed') or '?'}s)"
             log.info("vote envoyé: %s (%s)", site.url, result.method)
+            # La réponse du re-submit (ou la re-lecture de la page), lue DEPUIS la
+            # session même du vote (cookies inclus) = vérification sans aller-retour
+            post = data.get("post_fetch") or []
+            if post and post[0].get("body"):
+                body = post[0]["body"]
+                result.details["verify_body_bytes"] = len(body)
+                if marker_found(body, profile.success_markers) or marker_found(body, profile.already_markers):
+                    result.verified = True
+                    log.info("vote vérifié dans la session du vote: %s", site.url)
         except SolverError as e:
             result.error = str(e)
             log.error("échec vote %s: %s", site.url, e)

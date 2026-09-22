@@ -14,8 +14,11 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Rendre le package importable depuis le repo (autovote-bot/autovote_bot)
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Rendre le package importable depuis le repo (autovote-bot/autovote_bot),
+# ainsi que le sidecar (common/) pour les tests d'encodage post_fetch
+_HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE))
+sys.path.insert(0, str(_HERE.parent))
 
 from autovote_bot.scheduler import NightWindow, Scheduler, shift_out_of_night_window  # noqa: E402
 from autovote_bot import htmlutil as H  # noqa: E402
@@ -124,6 +127,75 @@ class TestScheduler(unittest.TestCase):
         p = s.plan("a", self.now, self.now)
         self.assertTrue(p.night_shifted)
         self.assertEqual(p.next_vote, self.now.replace(hour=8, minute=0) + timedelta(days=1))
+
+
+PRIVE_FORM_HTML = """
+<html><body>
+<form id="search" action="/recherche"><input name="q" type="text"></form>
+<form id="voteForm" method="post" action="">
+  <input id="username" name="username" type="text">
+  <input type="hidden" name="csrf_token" value="abc123">
+  <div class="h-captcha" data-sitekey="10000000-ffff-ffff-ffff-000000000001"></div>
+  <input type="hidden" name="h-captcha-response" value="">
+  <button id="voteBtn" type="submit">Je vote maintenant</button>
+</form>
+</body></html>
+"""
+
+
+class TestParseVoteForm(unittest.TestCase):
+    def test_form_hcaptcha(self):
+        from autovote_bot.htmlutil import parse_vote_form
+        f = parse_vote_form(PRIVE_FORM_HTML, "https://serveur-prive.net/minecraft/x/vote")
+        self.assertIsNotNone(f)
+        self.assertEqual(f["nick_field"], "username")
+        self.assertEqual(f["captcha_field"], "h-captcha-response")
+        self.assertEqual(f["fields"]["csrf_token"], "abc123")
+        # action vide -> la page elle-même
+        self.assertEqual(f["action"], "https://serveur-prive.net/minecraft/x/vote")
+        self.assertTrue(f["has_widget"])
+        # le formulaire de recherche n'a pas été choisi
+        self.assertNotIn("q", f["fields"])
+
+    def test_action_relatif(self):
+        from autovote_bot.htmlutil import parse_vote_form
+        html = '<form action="/api/vote" method="post"><input name="pseudo" type="text">' \
+               '<div class="g-recaptcha" data-sitekey="6LxAbC1234567890abc"></div>' \
+               '<input type="hidden" name="g-recaptcha-response"></form>'
+        f = parse_vote_form(html, "https://votelist.fr/serveur/99")
+        self.assertEqual(f["action"], "https://votelist.fr/api/vote")
+        self.assertEqual(f["nick_field"], "pseudo")
+        self.assertEqual(f["captcha_field"], "g-recaptcha-response")
+
+    def test_sans_formulaire(self):
+        from autovote_bot.htmlutil import parse_vote_form
+        self.assertIsNone(parse_vote_form("<p>rien</p>", "https://x.fr/"))
+
+
+class TestBuildFetchBody(unittest.TestCase):
+    def test_get_sans_body(self):
+        from common.browser import build_fetch_body
+        body, ct = build_fetch_body({"url": "https://x", "method": "GET"}, "tok")
+        self.assertIsNone(body)
+        self.assertEqual(ct, "")
+
+    def test_form_encoding(self):
+        from common.browser import build_fetch_body
+        pf = {"url": "https://x", "method": "POST", "contentType": "form",
+              "body": {"username": "Nick", "h-captcha-response": "__TOKEN__", "csrf": "abc"}}
+        body, ct = build_fetch_body(pf, "TOK123")
+        self.assertEqual(ct, "application/x-www-form-urlencoded")
+        self.assertIn("h-captcha-response=TOK123", body)
+        self.assertIn("username=Nick", body)
+        self.assertIn("csrf=abc", body)
+
+    def test_json_par_defaut(self):
+        import json as _json
+        from common.browser import build_fetch_body
+        pf = {"url": "https://x", "method": "POST", "body": {"token": "__TOKEN__"}}
+        body, ct = build_fetch_body(pf, "TOK456")
+        self.assertEqual(ct, "application/json")
+        self.assertEqual(_json.loads(body)["token"], "TOK456")
 
 
 class TestNextWakeup(unittest.TestCase):
